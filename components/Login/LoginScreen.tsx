@@ -1,10 +1,12 @@
 // ══════════════════════════════════════════════════════════════
 //  LoginScreen.tsx — 로그인 모달 (API 연결)
 // ══════════════════════════════════════════════════════════════
+
 import { authApi } from "@/components/api/api";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -24,7 +26,6 @@ export interface LoginScreenProps {
   onSwitchToSignup: () => void;
 }
 
-// ── orgType 한글 → 영문 정규화 ────────────────────────────────
 const normalizeOrgType = (raw: string): string => {
   const map: Record<string, string> = {
     개인: "personal",
@@ -34,6 +35,7 @@ const normalizeOrgType = (raw: string): string => {
     병원: "hospital",
     경찰서: "police",
   };
+
   return map[raw] ?? raw ?? "personal";
 };
 
@@ -56,6 +58,7 @@ export default function LoginScreen({
     setError("");
     setLoading(false);
   };
+
   const close = () => {
     reset();
     onClose();
@@ -64,28 +67,34 @@ export default function LoginScreen({
   const submit = async () => {
     setError("");
 
-    // ── 클라이언트 유효성 검사 ──────────────────────────────
     if (!email.includes("@")) {
       setError("올바른 이메일을 입력해주세요.");
       return;
     }
+
     if (!pw) {
       setError("비밀번호를 입력해주세요.");
       return;
     }
 
     setLoading(true);
+
     try {
-      // ── 서버 API 호출 ────────────────────────────────────
-      const data = await authApi.login({ email, password: pw });
+      const data = await authApi.login({
+        email,
+        password: pw,
+      });
+
       const normalizedType = normalizeOrgType(data.orgType);
+
       console.log("[Login] 성공:", data.name, normalizedType);
+
       onLogin(data.name, normalizedType, data.email);
       reset();
       onClose();
     } catch (e: any) {
       console.error("[Login] 실패:", e.message);
-      // 서버 오류 메시지를 사용자 친화적으로 변환
+
       if (e.message.includes("401") || e.message.includes("비밀번호")) {
         setError("이메일 또는 비밀번호가 올바르지 않습니다.");
       } else if (e.message.includes("404") || e.message.includes("없")) {
@@ -112,10 +121,10 @@ export default function LoginScreen({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <Pressable style={mo.backdrop} onPress={close} />
+
         <View style={mo.card}>
           <View style={mo.topBar} />
 
-          {/* 닫기 버튼 */}
           <TouchableOpacity style={mo.xBtn} onPress={close} activeOpacity={0.7}>
             <Text style={mo.xTxt}>✕</Text>
           </TouchableOpacity>
@@ -124,20 +133,27 @@ export default function LoginScreen({
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* 헤더 */}
             <View style={mo.hd}>
               <View style={mo.logoBox}>
-                <Text style={mo.logoTxt}>SB</Text>
+                <Image
+                  source={require("../../assets/images/SignBridge.png")}
+                  style={{
+                    width: 100,
+                    height: 100,
+                    borderRadius: 14,
+                  }}
+                  resizeMode="contain"
+                />
               </View>
+
               <Text style={mo.title}>로그인</Text>
               <Text style={mo.sub}>SignBridge에 오신 것을 환영합니다.</Text>
             </View>
 
-            {/* 폼 */}
             <View style={{ gap: 14 }}>
-              {/* 이메일 */}
               <View style={{ gap: 5 }}>
                 <Text style={mo.lbl}>이메일</Text>
+
                 <TextInput
                   style={[mo.inp, eFocus && mo.inpFoc]}
                   placeholder="example@email.com"
@@ -152,9 +168,9 @@ export default function LoginScreen({
                 />
               </View>
 
-              {/* 비밀번호 */}
               <View style={{ gap: 5 }}>
                 <Text style={mo.lbl}>비밀번호</Text>
+
                 <TextInput
                   style={[mo.inp, pFocus && mo.inpFoc]}
                   placeholder="••••••••"
@@ -169,14 +185,12 @@ export default function LoginScreen({
                 />
               </View>
 
-              {/* 에러 메시지 */}
               {error !== "" && (
                 <View style={mo.errBox}>
                   <Text style={mo.errTxt}>⚠️ {error}</Text>
                 </View>
               )}
 
-              {/* 로그인 버튼 */}
               <TouchableOpacity
                 style={[mo.btn, loading && { opacity: 0.7 }]}
                 onPress={submit}
@@ -191,9 +205,9 @@ export default function LoginScreen({
               </TouchableOpacity>
             </View>
 
-            {/* 회원가입 전환 링크 */}
             <View style={mo.sw}>
               <Text style={mo.swTxt}>계정이 없으신가요? </Text>
+
               <TouchableOpacity
                 onPress={() => {
                   close();

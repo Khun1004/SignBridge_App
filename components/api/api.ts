@@ -8,7 +8,11 @@
 // - iOS 시뮬레이터:  http://localhost:8080
 // - Android 에뮬레이터: http://10.0.2.2:8080
 // - 실제 기기: http://[컴퓨터 IP]:8080  (예: http://192.168.1.100:8080)
-const BASE_URL = "http://192.168.1.102:8080/api"; // ← ipconfig로 확인한 본인 IP로 변경
+// ── IP 주소 한 곳에서만 관리 ──────────────────────────────────
+const SERVER_IP = "192.168.0.133"; // ← ipconfig의 IPv4 주소만 변경하세요
+
+const BASE_URL = `http://${SERVER_IP}:8080/api`;
+export const LSTM_WS_URL = `ws://${SERVER_IP}:8000/ws/sign`;
 
 // ── 공통 요청 함수 ─────────────────────────────────────────────
 async function request<T = any>(

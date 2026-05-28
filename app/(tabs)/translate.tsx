@@ -20,7 +20,7 @@ import {
   View,
 } from "react-native";
 
-import { translateApi } from "@/components/api/api";
+import { LSTM_WS_URL, translateApi } from "@/components/api/api";
 import AvatarPanel, { Guide } from "@/components/Translate/AvatarPanel";
 import SignCameraView from "@/components/Translate/SignCameraView";
 import useLSTMSign from "@/hooks/useLSTMSign";
@@ -180,7 +180,7 @@ function TranslateView({
     onLandmarks: useCallback((data: any) => {
       setLandmarks(data);
     }, []),
-    serverUrl: "ws://192.168.0.80:8000/ws/sign", // ← LSTM 서버 IP (별도)
+    serverUrl: LSTM_WS_URL,
   });
 
   const handleLstmAccept = () => {

@@ -1,9 +1,10 @@
 // ══════════════════════════════════════════════════════════════
-//  AppHeader.tsx — 상태 충돌 버그 수정본
+//  AppHeader.tsx — 다크 테마 + 하단 border radius
 // ══════════════════════════════════════════════════════════════
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
+  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -15,17 +16,17 @@ import SignupScreen from "../SignUp/SignupScreen";
 
 const C = {
   accent: "#7c6fff",
+  accentLt: "#6c5ce7",
   text: "#1a1a2e",
   sub: "#666",
-  border: "#e8e8f0",
-  bg: "#ffffff",
-  searchBg: "#f4f4f8",
+  border: "#e0dff8",
+  bg: "#f5f3ff", // ← 연보라 밝은 배경
+  surface: "#ece9ff", // ← 서피스
   red: "#ef4444",
 };
 
 const ROW1_H = 52;
 const ROW2_H = 44;
-const HEADER_H = ROW1_H + ROW2_H;
 
 interface NotifItem {
   id: string;
@@ -36,7 +37,7 @@ interface NotifItem {
 }
 
 interface AppHeaderProps {
-  loggedIn: boolean; // 부모의 상태를 직접 받음
+  loggedIn: boolean;
   displayName: string;
   notifications: NotifItem[];
   onSearchSubmit?: (text: string) => void;
@@ -72,22 +73,27 @@ export default function AppHeader({
 
   const handleLoginSuccess = (name: string, orgType: string, email: string) => {
     setAuthModal(null);
-    if (onLogin) onLogin(name, orgType, email);
+    onLogin?.(name, orgType, email);
   };
 
   return (
     <>
       <View style={s.wrapper}>
-        {/* ─── 1행: 로고 + 액션 ─── */}
+        {/* 상단 보라 포인트 라인 */}
+        <View style={s.accentLine} />
+
+        {/* ─── 1행 ─── */}
         <View style={s.row1}>
           <TouchableOpacity
             style={s.logo}
             onPress={onLogoPress}
             activeOpacity={0.75}
           >
-            <View style={s.logoBox}>
-              <Text style={s.logoIco}>SB</Text>
-            </View>
+            <Image
+              source={require("../../assets/images/SignBridge.png")}
+              style={s.logoImage}
+              resizeMode="contain"
+            />
             <Text style={s.logoTxt}>SignBridge</Text>
           </TouchableOpacity>
 
@@ -103,7 +109,6 @@ export default function AppHeader({
                     {navLabel}님
                   </Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={s.logoutBtn}
                   onPress={onLogout}
@@ -111,13 +116,16 @@ export default function AppHeader({
                 >
                   <Text style={s.logoutTxt}>로그아웃</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={s.myIconBtn}
                   onPress={onMyPage}
                   activeOpacity={0.75}
                 >
-                  <Ionicons name="person-outline" size={18} color={C.accent} />
+                  <Ionicons
+                    name="person-outline"
+                    size={18}
+                    color={C.accentLt}
+                  />
                 </TouchableOpacity>
               </View>
             ) : (
@@ -141,7 +149,7 @@ export default function AppHeader({
           </View>
         </View>
 
-        {/* ─── 2행: 검색바 + 알림 ─── */}
+        {/* ─── 2행 ─── */}
         <View style={s.row2}>
           <View style={[s.search, searchFocused && s.searchFoc]}>
             <Ionicons
@@ -153,7 +161,7 @@ export default function AppHeader({
             <TextInput
               style={s.searchInp}
               placeholder="수어 단어를 검색하세요..."
-              placeholderTextColor="#bbb"
+              placeholderTextColor="#aaa"
               value={searchText}
               onChangeText={setSearchText}
               onSubmitEditing={handleSearch}
@@ -214,17 +222,31 @@ export default function AppHeader({
 }
 
 const s = StyleSheet.create({
+  // ── 헤더 래퍼 ──────────────────────────────────────────────
   wrapper: {
     backgroundColor: C.bg,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
+    borderBottomLeftRadius: 24, // 하단만 둥글게
+    borderBottomRightRadius: 24,
+    borderBottomWidth: 1.5,
+    borderLeftWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderColor: "#c4b5fd",
+    shadowColor: "#7c6fff",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
     zIndex: 200,
+    overflow: "hidden",
   },
+
+  // 상단 보라 포인트 라인
+  accentLine: {
+    height: 2,
+    backgroundColor: C.accent,
+    opacity: 0.8,
+  },
+
   row1: {
     height: ROW1_H,
     flexDirection: "row",
@@ -241,33 +263,80 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 8,
   },
-  logo: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
-  logoBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: C.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoIco: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 11,
-    letterSpacing: 0.5,
-  },
+
+  // 로고
+  logo: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
+  logoImage: { width: 38, height: 38, borderRadius: 10 },
   logoTxt: {
     fontWeight: "700",
     fontSize: 17,
     color: C.accent,
     letterSpacing: -0.3,
   },
+
   actions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     flexShrink: 0,
   },
+  authGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+  },
+
+  // 로그인 상태
+  myBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: C.accent,
+    backgroundColor: "rgba(124,111,255,0.15)",
+    maxWidth: 90,
+  },
+  myTxt: { fontSize: 12, fontWeight: "700", color: C.accent },
+  myIconBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: C.accent,
+    backgroundColor: "rgba(124,111,255,0.15)",
+  },
+  logoutBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: "#fca5a5",
+    backgroundColor: "#fff1f1",
+  },
+  logoutTxt: { fontSize: 12, fontWeight: "700", color: "#ef4444" },
+
+  // 비로그인 상태
+  loginBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: "#c4b5fd",
+    backgroundColor: "#ede9fe",
+  },
+  loginTxt: { fontSize: 12, fontWeight: "700", color: "#6c5ce7" },
+  signupBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9,
+    backgroundColor: C.accent,
+  },
+  signupTxt: { fontSize: 12, fontWeight: "700", color: "#fff" },
+
+  // 알림
   icoBtn: {
     width: 36,
     height: 36,
@@ -275,11 +344,12 @@ const s = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 9,
     borderWidth: 1.5,
-    borderColor: C.border,
+    borderColor: "#c4b5fd",
+    backgroundColor: "#ede9fe",
   },
   icoBtnOn: {
     borderColor: C.accent,
-    backgroundColor: "rgba(124,111,255,0.05)",
+    backgroundColor: "rgba(124,111,255,0.12)",
   },
   badge: {
     position: "absolute",
@@ -296,61 +366,14 @@ const s = StyleSheet.create({
     borderColor: "#fff",
   },
   badgeTxt: { color: "#fff", fontSize: 9, fontWeight: "700" },
-  authGroup: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flexShrink: 0,
-  },
-  myIconBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: C.accent,
-    backgroundColor: "rgba(124,111,255,0.06)",
-  },
-  myBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: C.accent,
-    backgroundColor: "rgba(124,111,255,0.06)",
-    maxWidth: 90,
-  },
-  myTxt: { fontSize: 12, fontWeight: "700", color: C.accent },
-  logoutBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: "#fca5a5",
-  },
-  logoutTxt: { fontSize: 12, fontWeight: "700", color: C.red },
-  loginBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: C.border,
-  },
-  loginTxt: { fontSize: 12, fontWeight: "700", color: C.sub },
-  signupBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 9,
-    backgroundColor: C.accent,
-  },
-  signupTxt: { fontSize: 12, fontWeight: "700", color: "#fff" },
+
+  // 검색
   search: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: C.searchBg,
+    backgroundColor: "#fff",
     borderWidth: 1.5,
-    borderColor: C.border,
+    borderColor: "#d4ccff",
     borderRadius: 10,
     overflow: "hidden",
     flex: 1,
@@ -363,7 +386,7 @@ const s = StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 4,
     fontSize: 13,
-    color: C.text,
+    color: "#1a1a2e",
   },
   searchClearBtn: { paddingHorizontal: 6, paddingVertical: 8 },
   searchBtn: {

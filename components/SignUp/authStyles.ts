@@ -60,10 +60,10 @@ export const mo = StyleSheet.create({
   xTxt: { fontSize: 14, color: "#888", fontWeight: "700" as const },
   hd: { alignItems: "center", marginBottom: 18 },
   logoBox: {
-    width: 52,
-    height: 52,
+    width: 100,
+    height: 100,
     borderRadius: 13,
-    backgroundColor: C.accent,
+    // backgroundColor: C.accent,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
