@@ -1,5 +1,10 @@
 // app/_layout.tsx
 import AppHeader from "@/components/AppHeader/AppHeader";
+import { AuthProvider, useAuth } from "@/components/contexts/AuthContext";
+import {
+  CommunityProvider,
+  useCommunity,
+} from "@/components/contexts/CommunityContext";
 import {
   ScrollProvider,
   useScrollControl,
@@ -39,23 +44,51 @@ function AppShell() {
   const router = useRouter();
   const segments = useSegments() as string[];
   const { scrollUp, scrollDown } = useScrollControl();
+  const { loggedIn, displayName, userEmail, orgType, login, logout } =
+    useAuth();
+  const { communityView, communityTitle, setCommunityView, setCommunityTitle } =
+    useCommunity();
 
-  const isMyPage = segments.includes("my");
-  const isDemoPage = segments.includes("demopage") || segments.includes("demo");
-  const isBackHeader = isMyPage || isDemoPage;
+  const handleBack = () => {
+    if (isCommunitySubView) {
+      setCommunityView("list");
+      setCommunityTitle("");
+    } else {
+      router.back();
+    }
+  };
+
   const currentTab = segments.includes("(tabs)")
     ? segments[segments.length - 1]
     : "";
   const isHome =
     segments.includes("(tabs)") &&
     (segments.length === 1 || currentTab === "index");
+  const isMyPage = segments.includes("my");
+  const isDemoPage = segments.includes("demopage") || segments.includes("demo");
+  const isRegistration = segments.includes("registration");
+  const isCommDetail = segments.includes("communitypersonaldetail");
+  const isCommunitySubView =
+    currentTab === "community" && communityView !== "list";
+  const isBackHeader =
+    isMyPage ||
+    isDemoPage ||
+    isRegistration ||
+    isCommDetail ||
+    isCommunitySubView;
 
-  // 케밥 메뉴 열림 상태
   const [menuOpen, setMenuOpen] = useState(false);
 
   const getBackHeaderTitle = () => {
     if (isMyPage) return "마이페이지";
     if (isDemoPage) return "소통 데모 체험";
+    if (isRegistration) return "프로필 등록";
+    if (isCommDetail) return "프로필 상세";
+    if (isCommunitySubView)
+      return (
+        communityTitle ||
+        (communityView === "register" ? "프로필 등록" : "프로필 상세")
+      );
     return "";
   };
 
@@ -76,10 +109,6 @@ function AppShell() {
     }
   };
 
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [displayName, setDisplayName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [orgType, setOrgType] = useState("");
   const [notifications] = useState<NotifItem[]>(SAMPLE_NOTIFICATIONS);
 
   const goMyPage = () => {
@@ -97,7 +126,6 @@ function AppShell() {
     setMenuOpen(false);
     router.replace("/(tabs)/translate" as any);
   };
-
   const goCall = () => {
     setMenuOpen(false);
     Alert.alert("알림", "전화 연결 기능은 준비 중입니다.");
@@ -107,30 +135,48 @@ function AppShell() {
     <SafeAreaView style={styles.root} edges={["top"]}>
       {/* ── 헤더 ── */}
       {isBackHeader ? (
+        /* 마이페이지 / 데모 → 다크 헤더 */
         <View style={styles.myHeader}>
-          <TouchableOpacity
-            style={styles.myHeaderLeft}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="chevron-back" size={24} color="#7c6fff" />
+          <TouchableOpacity style={styles.myHeaderLeft} onPress={handleBack}>
+            <Ionicons name="chevron-back" size={24} color="#a78bfa" />
             <Text style={styles.myHeaderTitle}>{getBackHeaderTitle()}</Text>
           </TouchableOpacity>
           <View style={styles.myHeaderRight}>
+            {/* 검색 */}
+            <TouchableOpacity
+              style={styles.myHeaderIconBtn}
+              onPress={() => router.navigate("/(tabs)/dictionary" as any)}
+            >
+              <Ionicons name="search-outline" size={22} color="#94a3b8" />
+            </TouchableOpacity>
+            {/* 알림 */}
             <TouchableOpacity
               style={styles.myHeaderIconBtn}
               onPress={() => Alert.alert("알림", "알림 센터를 엽니다.")}
             >
-              <Ionicons name="notifications-outline" size={24} color="#666" />
+              <Ionicons
+                name="notifications-outline"
+                size={22}
+                color="#94a3b8"
+              />
             </TouchableOpacity>
+            {/* 홈 */}
             <TouchableOpacity
               style={styles.myHeaderIconBtn}
-              onPress={() => router.replace("/(tabs)/" as any)}
+              onPress={() => {
+                if (isCommunitySubView) {
+                  setCommunityView("list");
+                  setCommunityTitle("");
+                }
+                router.replace("/(tabs)/" as any);
+              }}
             >
-              <Ionicons name="home-outline" size={24} color="#666" />
+              <Ionicons name="home-outline" size={22} color="#94a3b8" />
             </TouchableOpacity>
           </View>
         </View>
       ) : isHome ? (
+        /* 홈 → AppHeader */
         <AppHeader
           loggedIn={loggedIn}
           displayName={displayName}
@@ -142,22 +188,15 @@ function AppShell() {
               params: { q: text },
             });
           }}
-          onLogin={(name, org, email) => {
-            setDisplayName(name || email.split("@")[0]);
-            setUserEmail(email);
-            setOrgType(org);
-            setLoggedIn(true);
-          }}
+          onLogin={(name, org, email) => login(name, org, email)}
           onLogout={() => {
-            setLoggedIn(false);
-            setDisplayName("");
-            setUserEmail("");
-            setOrgType("");
+            logout();
             router.replace("/(tabs)/" as any);
           }}
           onMyPage={goMyPage}
         />
       ) : (
+        /* 서브 탭 → 딥 블루 헤더 */
         <View style={styles.subHeader}>
           <Text style={styles.subHeaderTitle}>{getHeaderTitle()}</Text>
           <View style={styles.subHeaderRight}>
@@ -198,11 +237,13 @@ function AppShell() {
           <Stack.Screen name="my" />
           <Stack.Screen name="demopage" />
           <Stack.Screen name="demo" />
+          <Stack.Screen name="registration" />
+          <Stack.Screen name="communitypersonaldetail" />
           <Stack.Screen name="modal" options={{ presentation: "modal" }} />
         </Stack>
       </View>
 
-      {/* ══ 홈 탭 — 기존 플로팅 버튼 ══ */}
+      {/* ══ 홈 탭 — 플로팅 버튼 ══ */}
       {isHome && (
         <View style={styles.floatingSidebar}>
           <TouchableOpacity
@@ -253,10 +294,8 @@ function AppShell() {
       {/* ══ 다른 탭 — 케밥 메뉴 ══ */}
       {!isHome && !isBackHeader && (
         <View style={styles.kebabWrap}>
-          {/* 팝업 메뉴 (열렸을 때) */}
           {menuOpen && (
             <View style={styles.popupMenu}>
-              {/* 전화 버튼 (위쪽) */}
               <TouchableOpacity
                 style={[styles.popupBtn, styles.popupCall]}
                 onPress={goCall}
@@ -265,8 +304,6 @@ function AppShell() {
                 <Ionicons name="call-outline" size={20} color="#fff" />
                 <Text style={styles.popupLabel}>전화</Text>
               </TouchableOpacity>
-
-              {/* 하단 행: 채팅(왼쪽) + 닫기(오른쪽) */}
               <View style={styles.popupRow}>
                 <TouchableOpacity
                   style={[styles.popupBtn, styles.popupChat]}
@@ -280,8 +317,6 @@ function AppShell() {
                   />
                   <Text style={styles.popupLabel}>채팅</Text>
                 </TouchableOpacity>
-
-                {/* ✕ 닫기 */}
                 <TouchableOpacity
                   style={styles.kebabBtn}
                   onPress={() => setMenuOpen(false)}
@@ -292,8 +327,6 @@ function AppShell() {
               </View>
             </View>
           )}
-
-          {/* 케밥 아이콘 (닫혔을 때만) */}
           {!menuOpen && (
             <TouchableOpacity
               style={styles.kebabBtn}
@@ -316,9 +349,13 @@ function AppShell() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <ScrollProvider>
-        <AppShell />
-      </ScrollProvider>
+      <AuthProvider>
+        <CommunityProvider>
+          <ScrollProvider>
+            <AppShell />
+          </ScrollProvider>
+        </CommunityProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
@@ -327,6 +364,30 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#fff" },
   body: { flex: 1 },
 
+  // ── 마이페이지 / 데모 헤더 → 다크 ──
+  myHeader: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    backgroundColor: "#0f172a", // ← 딥 네이비 (블랙에 가까운)
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    borderBottomWidth: 1,
+    borderColor: "#1e293b",
+    shadowColor: "#7c6fff",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  myHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
+  myHeaderTitle: { fontSize: 18, fontWeight: "800", color: "#f1f5f9" },
+  myHeaderRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  myHeaderIconBtn: { padding: 6 },
+
+  // ── 서브 탭 헤더 ──
   subHeader: {
     height: 56,
     flexDirection: "row",
@@ -349,21 +410,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   myAvatarTxt: { fontSize: 12, fontWeight: "800", color: "#fff" },
-
-  myHeader: {
-    height: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e8e8f0",
-  },
-  myHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 4 },
-  myHeaderTitle: { fontSize: 19, fontWeight: "800", color: "#1a1a2e" },
-  myHeaderRight: { flexDirection: "row", alignItems: "center", gap: 16 },
-  myHeaderIconBtn: { padding: 4 },
 
   // ── 홈 플로팅 사이드바 ──
   floatingSidebar: {
@@ -398,15 +444,13 @@ const styles = StyleSheet.create({
   fsbCall: { backgroundColor: "#10b981" },
   fsbLabel: { fontSize: 10, fontWeight: "700", color: "#fff", marginTop: 2 },
 
-  // ── 케밥 메뉴 래퍼 (우측 하단) ──
+  // ── 케밥 메뉴 ──
   kebabWrap: {
     position: "absolute",
     right: 20,
     bottom: 160,
     alignItems: "flex-end",
   },
-
-  // 케밥 버튼 (⋮)
   kebabBtn: {
     width: 48,
     height: 48,
@@ -422,20 +466,10 @@ const styles = StyleSheet.create({
   },
   kebabDots: { gap: 3.5, alignItems: "center" },
   kebabDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "#fff" },
-
-  // 팝업 메뉴
   popupMenu: { alignItems: "flex-end", gap: 8, marginBottom: 8 },
-
-  // 전화 (위)
   popupCall: { backgroundColor: "#10b981" },
-
-  // 채팅 (왼쪽)
   popupChat: { backgroundColor: "#7c6fff" },
-
-  // 하단 행 (채팅 + 닫기)
   popupRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-
-  // 공통 팝업 버튼
   popupBtn: {
     width: 52,
     height: 52,

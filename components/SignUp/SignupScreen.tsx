@@ -6,6 +6,7 @@ import { authApi } from "@/components/api/api";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -20,6 +21,89 @@ import {
 
 import { C, mo } from "./../SignUp/authStyles";
 import AddressSearchModal, { AddressData } from "./AddressSearchModal";
+
+// ── 비밀번호 강도 표시 컴포넌트 ────────────────────────────────
+function PasswordStrength({ password }: { password: string }) {
+  const checks = [
+    { label: "8자 이상", ok: password.length >= 8 },
+    { label: "영문 대문자", ok: /[A-Z]/.test(password) },
+    { label: "영문 소문자", ok: /[a-z]/.test(password) },
+    { label: "숫자", ok: /\d/.test(password) },
+    { label: "특수문자(!@#$)", ok: /[!@#$%^&*]/.test(password) },
+  ];
+  const passed = checks.filter((c) => c.ok).length;
+  const color =
+    passed <= 2
+      ? "#ef4444"
+      : passed <= 3
+        ? "#f59e0b"
+        : passed <= 4
+          ? "#3b82f6"
+          : "#10b981";
+  const label =
+    passed <= 2
+      ? "약함"
+      : passed <= 3
+        ? "보통"
+        : passed <= 4
+          ? "강함"
+          : "매우 강함";
+
+  return (
+    <View style={{ marginTop: 8, gap: 6 }}>
+      {/* 강도 바 */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View
+          style={{
+            flex: 1,
+            height: 4,
+            backgroundColor: "#e5e7eb",
+            borderRadius: 4,
+            overflow: "hidden",
+          }}
+        >
+          <View
+            style={{
+              width: `${(passed / 5) * 100}%` as any,
+              height: "100%",
+              backgroundColor: color,
+              borderRadius: 4,
+            }}
+          />
+        </View>
+        <Text style={{ fontSize: 11, fontWeight: "700", color, minWidth: 50 }}>
+          {label}
+        </Text>
+      </View>
+      {/* 체크 항목 */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
+        {checks.map((c) => (
+          <View
+            key={c.label}
+            style={{
+              paddingHorizontal: 7,
+              paddingVertical: 2,
+              borderRadius: 20,
+              backgroundColor: c.ok
+                ? "rgba(16,185,129,0.1)"
+                : "rgba(0,0,0,0.05)",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "600",
+                color: c.ok ? "#059669" : "#9ca3af",
+              }}
+            >
+              {c.ok ? "✓" : "○"} {c.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 // ─── 기관 유형 ────────────────────────────────────────────────
 const ORG_TYPES = [
@@ -465,7 +549,11 @@ export default function SignupScreen({
             >
               <View style={mo.hd}>
                 <View style={mo.logoBox}>
-                  <Text style={mo.logoTxt}>SB</Text>
+                  <Image
+                    source={require("../../assets/images/SignBridge.png")}
+                    style={{ width: 100, height: 100, borderRadius: 14 }}
+                    resizeMode="contain"
+                  />
                 </View>
                 <Text style={mo.title}>회원가입</Text>
                 <Text style={mo.sub}>
@@ -686,6 +774,9 @@ export default function SignupScreen({
                         <Text style={sg.eyeIcon}>{showPw ? "🙈" : "👁️"}</Text>
                       </TouchableOpacity>
                     </View>
+                    {!!form.password && (
+                      <PasswordStrength password={form.password} />
+                    )}
                     {errors.password && (
                       <Text style={mo.errField}>{errors.password}</Text>
                     )}

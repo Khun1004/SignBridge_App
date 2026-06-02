@@ -112,16 +112,11 @@ export default function CommunityPersonalDetail({
     : [];
 
   return (
-    <ScrollView style={st.page} showsVerticalScrollIndicator={false}>
-      {/* 뒤로가기 */}
-      <TouchableOpacity
-        style={st.backBtn}
-        onPress={onBack}
-        activeOpacity={0.75}
-      >
-        <Text style={st.backBtnTxt}>← 커뮤니티로</Text>
-      </TouchableOpacity>
-
+    <ScrollView
+      style={st.page}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 100 }}
+    >
       {/* 프로필 헤더 */}
       <View style={st.hero}>
         <View style={st.avatar}>

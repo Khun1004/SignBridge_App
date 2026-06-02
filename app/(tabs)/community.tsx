@@ -1,19 +1,16 @@
 // ══════════════════════════════════════════════════════════════
 //  app/(tabs)/community.tsx
-//  웹 Community.jsx → React Native 변환
-//  서버 API 연동 + Registration + CommunityPersonalDetail 포함
 // ══════════════════════════════════════════════════════════════
 import { communityApi, CommunityMember } from "@/components/api/api";
-import CommunityPersonalDetail, {
-  CommunityMemberItem,
-} from "@/components/Community/CommunityPersonalDetail";
-import Registration, {
-  RegistrationForm,
-} from "@/components/Community/Registration";
+import { RegistrationForm } from "@/components/Community/Registration";
+import { useAuth } from "@/components/contexts/AuthContext";
+import { useCommunity } from "@/components/contexts/CommunityContext";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -55,30 +52,26 @@ const REGION_OPTIONS = [
 
 type ViewMode = "list" | "register" | "detail";
 
-interface Props {
-  userEmail?: string;
-  displayName?: string;
-  onLoginRequired?: () => void;
-  myProfile?: CommunityMemberItem | null;
-  onProfileSave?: (profile: CommunityMemberItem) => void;
-}
-
-export default function CommunityScreen({
-  userEmail = "",
-  displayName = "",
-  onLoginRequired,
-  myProfile = null,
-  onProfileSave,
-}: Props) {
+export default function CommunityScreen() {
   const [view, setView] = useState<ViewMode>("list");
   const [members, setMembers] = useState<CommunityMember[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<CommunityMemberItem | null>(null);
-  const [editTarget, setEditTarget] = useState<CommunityMemberItem | null>(
-    null,
-  );
+  const [selected, setSelected] = useState<CommunityMember | null>(null);
+  const [editTarget, setEditTarget] = useState<CommunityMember | null>(null);
   const [filterRole, setFilterRole] = useState("전체");
   const [filterRegion, setFilterRegion] = useState("전체");
+
+  // ── 로그인 상태 (AuthContext에서 가져오기) ─────────────────
+  const { loggedIn, userEmail, displayName } = useAuth();
+  const { setCommunityView, setCommunityTitle } = useCommunity();
+  const router = useRouter();
+
+  // ── 뷰 전환 (Context 동기화) ─────────────────────────────────
+  const changeView = (v: ViewMode, title = "") => {
+    setView(v);
+    setCommunityView(v);
+    setCommunityTitle(title);
+  };
 
   // ── 목록 로드 ───────────────────────────────────────────────
   const loadMembers = useCallback(async (role = "", region = "") => {
@@ -99,12 +92,11 @@ export default function CommunityScreen({
 
   // ── 등록하기 클릭 ───────────────────────────────────────────
   const handleRegisterClick = () => {
-    if (!userEmail) {
-      onLoginRequired?.();
+    if (!loggedIn) {
+      Alert.alert("로그인 필요", "등록하려면 먼저 로그인 해주세요.");
       return;
     }
-    setEditTarget(null);
-    setView("register");
+    router.push("/registration" as any);
   };
 
   // ── 등록/수정 완료 ──────────────────────────────────────────
@@ -130,55 +122,20 @@ export default function CommunityScreen({
       saved = await communityApi.save(body);
     }
 
-    const profileData: CommunityMemberItem = {
-      ...saved,
-      contact: { type: saved.contactType, value: saved.contactValue },
-      avatar: saved.name?.charAt(0) || "?",
-    };
-    onProfileSave?.(profileData);
     await loadMembers(filterRole, filterRegion);
     setEditTarget(null);
     setView("list");
   };
 
   // ── 뷰 분기 ─────────────────────────────────────────────────
-  if (view === "register") {
-    return (
-      <Registration
-        defaultName={displayName}
-        initialData={editTarget}
-        isEdit={!!editTarget}
-        onBack={() => {
-          setView("list");
-          setEditTarget(null);
-        }}
-        onSubmit={handleSubmit}
-      />
-    );
-  }
-
-  if (view === "detail" && selected) {
-    return (
-      <CommunityPersonalDetail
-        member={selected}
-        myEmail={userEmail}
-        myName={displayName}
-        onBack={() => {
-          setView("list");
-          setSelected(null);
-        }}
-        onEdit={(m) => {
-          setEditTarget(m);
-          setSelected(null);
-          setView("register");
-        }}
-      />
-    );
-  }
 
   // ── 목록 화면 ───────────────────────────────────────────────
   return (
-    <ScrollView style={s.page} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={s.page}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 100 }}
+    >
       {/* 헤더 */}
       <View style={s.header}>
         <View>
@@ -191,38 +148,28 @@ export default function CommunityScreen({
           </Text>
         </View>
         <TouchableOpacity
-          style={s.registerBtn}
+          style={[s.registerBtn, !loggedIn && s.registerBtnDisabled]}
           onPress={handleRegisterClick}
-          activeOpacity={0.85}
+          activeOpacity={loggedIn ? 0.85 : 1}
+          disabled={!loggedIn}
         >
           <Text style={s.registerBtnTxt}>+ 등록하기</Text>
+          {!loggedIn && <Text style={s.registerBtnHint}>🔒</Text>}
         </TouchableOpacity>
       </View>
 
-      {/* 내 프로필 배너 */}
-      {myProfile && (
-        <View style={s.myBanner}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View
-              style={[
-                s.cardAvatar,
-                { width: 36, height: 36, borderRadius: 10 },
-              ]}
-            >
-              <Text style={s.cardAvatarTxt}>
-                {myProfile.avatar || myProfile.name?.charAt(0)}
-              </Text>
-            </View>
-            <View>
-              <Text style={s.myBannerLabel}>내 커뮤니티 프로필</Text>
-              <Text style={s.myBannerName}>
-                {myProfile.name} · {myProfile.role}
-              </Text>
-            </View>
-          </View>
-          <View style={s.regionBadge}>
-            <Text style={s.regionBadgeTxt}>📍 {myProfile.region}</Text>
-          </View>
+      {/* 로그인 안내 배너 (비로그인 시) */}
+      {!loggedIn && (
+        <View style={s.loginBanner}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color={C.accent}
+          />
+          <Text style={s.loginBannerTxt}>
+            등록하려면 <Text style={{ fontWeight: "800" }}>홈 화면</Text>에서
+            로그인 해주세요
+          </Text>
         </View>
       )}
 
@@ -292,10 +239,22 @@ export default function CommunityScreen({
             <TouchableOpacity
               key={member.id}
               style={s.card}
-              onPress={() => {
-                setSelected(member as CommunityMemberItem);
-                setView("detail");
-              }}
+              onPress={() =>
+                router.push({
+                  pathname: "/communitypersonaldetail" as any,
+                  params: {
+                    memberId: String(member.id),
+                    memberData: JSON.stringify({
+                      ...member,
+                      avatar: member.avatar || member.name?.charAt(0) || "?",
+                      contact: {
+                        type: member.contactType,
+                        value: member.contactValue,
+                      },
+                    }),
+                  },
+                })
+              }
               activeOpacity={0.75}
             >
               <View style={s.cardAvatar}>
@@ -362,24 +321,52 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
+  registerBtnDisabled: { backgroundColor: "#c4c4d4", opacity: 0.6 },
   registerBtnTxt: { color: C.white, fontSize: 13, fontWeight: "700" },
+  registerBtnHint: { fontSize: 13 },
 
-  // 내 배너
-  myBanner: {
+  // 서브 페이지 헤더 (마이페이지형 다크)
+  subPageHeader: {
+    height: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 12,
-    backgroundColor: C.accentBg,
-    borderWidth: 1.5,
-    borderColor: "#c7d2fe",
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    backgroundColor: "#0f172a",
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    borderBottomWidth: 1,
+    borderColor: "#1e293b",
+    shadowColor: "#7c6fff",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  myBannerLabel: { fontSize: 12, color: C.accent, fontWeight: "700" },
-  myBannerName: { fontSize: 13, fontWeight: "700", color: C.text },
+  subPageLeft: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
+  subPageTitle: { fontSize: 18, fontWeight: "800", color: "#f1f5f9" },
+  subPageRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  subPageIconBtn: { padding: 6 },
+
+  // 로그인 안내
+  loginBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: C.accentBg,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#c7d2fe",
+  },
+  loginBannerTxt: { fontSize: 13, color: C.accent, flex: 1 },
 
   // 필터
   filters: {

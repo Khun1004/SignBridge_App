@@ -1,16 +1,17 @@
-// ══════════════════════════════════════════════════════════════
-//  app/(tabs)/_layout.tsx — Clean White 탭바 + AI 입력바 (수정본)
-// ══════════════════════════════════════════════════════════════
+// app/(tabs)/_layout.tsx — Clean White 탭바 + AI 입력바
+import AIChatModal from "@/components/AI/AIChatModal";
+import { useCommunity } from "@/components/contexts/CommunityContext";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -19,15 +20,9 @@ const INACTIVE_COLOR = "rgba(255,255,255,0.45)";
 const BOTTOM_INSET = Platform.OS === "ios" ? 34 : 12;
 const AI_BAR_HEIGHT = 44;
 const TAB_ROW_HEIGHT = 56;
-// 탭바 전체 높이 = 탭 아이콘 영역 + AI바 + safe area
 const TAB_BAR_HEIGHT = TAB_ROW_HEIGHT + AI_BAR_HEIGHT + 8 + BOTTOM_INSET;
 
-interface TabItem {
-  name: string;
-  title: string;
-}
-
-const TABS: TabItem[] = [
+const TABS = [
   { name: "index", title: "홈" },
   { name: "practice", title: "연습" },
   { name: "translate", title: "번역기" },
@@ -36,20 +31,7 @@ const TABS: TabItem[] = [
   { name: "about", title: "About" },
 ];
 
-// ── 탭 버튼 ───────────────────────────────────────────────────
-function TabButton({
-  focused,
-  label,
-  children,
-  onPress,
-  onLongPress,
-}: {
-  focused: boolean;
-  label: string;
-  children: React.ReactNode;
-  onPress?: () => void;
-  onLongPress?: () => void;
-}) {
+function TabButton({ focused, label, children, onPress, onLongPress }) {
   const scale = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const dotOpacity = useRef(new Animated.Value(0)).current;
@@ -102,20 +84,23 @@ function TabButton({
   );
 }
 
-// ── AI 바 (탭바 위에 절대위치로 렌더) ─────────────────────────
-export function AIBar() {
+// ── AI 바 ─────────────────────────────────────────────────────
+export function AIBar({ onPress }: { onPress?: () => void }) {
   return (
     <View style={styles.aiBarWrapper} pointerEvents="box-none">
-      <View style={styles.aiInner}>
+      <TouchableOpacity
+        style={styles.aiInner}
+        onPress={onPress}
+        activeOpacity={0.8}
+      >
         <IconSymbol size={15} name="sparkles" color={ACTIVE_COLOR} />
         <Text style={styles.aiPlaceholder}>AI에게 무엇이든 물어보세요...</Text>
         <IconSymbol size={17} name="mic" color={INACTIVE_COLOR} />
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
 
-// ── 탭바 배경 ─────────────────────────────────────────────────
 function TabBarBackground() {
   return (
     <View style={styles.tabBarContainer}>
@@ -128,14 +113,17 @@ function TabBarBackground() {
   );
 }
 
-// ── 레이아웃 ─────────────────────────────────────────────────
 export default function TabLayout() {
+  const { communityView } = useCommunity();
+  const hideTabs = communityView !== "list";
+  const [aiVisible, setAiVisible] = useState(false);
+
   return (
     <View style={{ flex: 1 }}>
       <Tabs
         screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarStyle: styles.tabBarStyle,
+          tabBarStyle: hideTabs ? { display: "none" } : styles.tabBarStyle,
           tabBarButton: (props) => {
             const tabItem = TABS.find((t) => t.name === route.name);
             return (
@@ -226,16 +214,16 @@ export default function TabLayout() {
         />
       </Tabs>
 
-      {/* AI 바: Tabs 바깥 View 위에 절대위치 → 탭 버튼보다 위에 렌더됨 */}
-      <AIBar />
+      {/* AI 바 — 탭바 숨김 시 같이 숨김 */}
+      {!hideTabs && <AIBar onPress={() => setAiVisible(true)} />}
+
+      {/* AI 채팅 Modal */}
+      <AIChatModal visible={aiVisible} onClose={() => setAiVisible(false)} />
     </View>
   );
 }
 
-// ── 스타일 ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  // Tabs 컴포넌트 자체의 탭바 영역
-  // paddingBottom으로 탭 아이콘이 AI바 위쪽에 자리잡게 함
   tabBarStyle: {
     position: "absolute",
     backgroundColor: "transparent",
@@ -245,8 +233,6 @@ const styles = StyleSheet.create({
     paddingBottom: AI_BAR_HEIGHT + 8 + BOTTOM_INSET,
     paddingTop: 4,
   },
-
-  // 배경 컨테이너
   tabBarContainer: {
     position: "absolute",
     bottom: 0,
@@ -276,8 +262,6 @@ const styles = StyleSheet.create({
     backgroundColor:
       Platform.OS === "ios" ? "rgba(0,0,0,0.78)" : "rgba(0,0,0,0.96)",
   },
-
-  // 탭 버튼
   tabButton: {
     flex: 1,
     alignItems: "center",
@@ -290,14 +274,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 4,
   },
-  iconWrapper: {
-    marginBottom: 3,
-  },
-  tabLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    letterSpacing: -0.2,
-  },
+  iconWrapper: { marginBottom: 3 },
+  tabLabel: { fontSize: 10, fontWeight: "600", letterSpacing: -0.2 },
   tabLabelActive: { color: ACTIVE_COLOR },
   tabLabelInactive: { color: INACTIVE_COLOR },
   activeDot: {
@@ -307,8 +285,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: ACTIVE_COLOR,
   },
-
-  // AI 바 — Tabs 바깥에서 절대위치로 렌더
   aiBarWrapper: {
     position: "absolute",
     bottom: BOTTOM_INSET + 6,

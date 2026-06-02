@@ -167,22 +167,8 @@ export default function Registration({
       style={st.page}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ paddingBottom: 100 }}
     >
-      {/* 헤더 */}
-      <View style={st.header}>
-        <TouchableOpacity
-          style={st.backBtn}
-          onPress={onBack}
-          activeOpacity={0.75}
-        >
-          <Text style={st.backBtnTxt}>← 뒤로</Text>
-        </TouchableOpacity>
-        <View>
-          <Text style={st.title}>{isEdit ? "프로필 수정" : "프로필 등록"}</Text>
-          <Text style={st.subtitle}>수어 커뮤니티에 나를 소개하세요</Text>
-        </View>
-      </View>
-
       {/* 스텝 인디케이터 */}
       <View style={st.steps}>
         {STEPS.map((label, i) => {
