@@ -2,7 +2,7 @@
 //  app/(tabs)/community.tsx
 // ══════════════════════════════════════════════════════════════
 import { communityApi, CommunityMember } from "@/components/api/api";
-import { RegistrationForm } from "@/components/Community/Registration";
+import { RegistrationForm } from "@/components/Community/RegistrationCommunity";
 import { useAuth } from "@/components/contexts/AuthContext";
 import { useCommunity } from "@/components/contexts/CommunityContext";
 import { Ionicons } from "@expo/vector-icons";

@@ -3,9 +3,10 @@
 //  수어 탭: 카메라 + LSTM 손 인식 + SubPanel 흐름
 //  텍스트 탭: 입력 → 전송 → 아바타 + 대화 동시 전송
 // ══════════════════════════════════════════════════════════════
+import { CameraView as ExpoCameraView } from "expo-camera";
+import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,6 +22,7 @@ import {
 } from "react-native";
 
 import { LSTM_WS_URL, translateApi } from "@/components/api/api";
+import { useAuth } from "@/components/contexts/AuthContext";
 import AvatarPanel, { Guide } from "@/components/Translate/AvatarPanel";
 import SignCameraView from "@/components/Translate/SignCameraView";
 import useLSTMSign from "@/hooks/useLSTMSign";
@@ -63,7 +65,6 @@ const PLACE_LABEL: Record<string, string> = {
   default: "현장",
 };
 
-// 마침표 추가
 function addPeriods(text: string): string {
   if (!text) return text;
   const t = text.trim();
@@ -93,47 +94,45 @@ function fmtTime(sec: number) {
 
 // ══════════════════════════════════════════════════════════════
 export default function TranslateScreen({
-  place = "immigration",
-  userEmail = "officer@example.com",
   onFinalRegister,
 }: {
-  place?: string;
-  userEmail?: string;
   onFinalRegister?: (m: Message[], v: VideoItem[]) => void;
 }) {
-  const [screenMode, setScreenMode] = useState<"translate" | "conversation">(
-    "translate",
-  );
-  const [messages, setMessages] = useState<Message[]>([]);
+  const router = useRouter();
+  const { userEmail, orgType } = useAuth();
   const [videoUris, setVideoUris] = useState<string[]>([]);
 
-  if (screenMode === "conversation") {
-    return (
-      <ConversationPage
-        messages={messages}
-        videoUris={videoUris}
-        place={place}
-        userEmail={userEmail}
-        onBack={() => setScreenMode("translate")}
-        onRegister={(vids) => {
-          if (onFinalRegister) onFinalRegister(messages, vids);
-          else {
-            Alert.alert("완료", "등록이 완료되었습니다.");
-            setMessages([]);
-            setVideoUris([]);
-            setScreenMode("translate");
-          }
-        }}
-      />
-    );
-  }
+  // orgType → place 변환 (AuthContext의 orgType 사용)
+  const ORGTYPE_TO_PLACE: Record<string, string> = {
+    immigration: "immigration",
+    출입국관리소: "immigration",
+    출입국사무소: "immigration",
+    hospital: "hospital",
+    병원: "hospital",
+    police: "police",
+    경찰서: "police",
+    airport: "airport",
+    공항: "airport",
+    personal: "personal",
+    개인: "personal",
+  };
+  const place = ORGTYPE_TO_PLACE[orgType] || orgType || "personal";
+
   return (
     <TranslateView
       place={place}
-      initialMessages={messages}
+      userEmail={userEmail}
+      initialMessages={[]}
       onEndConversation={(msgs) => {
-        setMessages(msgs);
-        setScreenMode("conversation");
+        router.push({
+          pathname: "/conversationpage",
+          params: {
+            messages: JSON.stringify(msgs),
+            videoUris: JSON.stringify(videoUris),
+            place,
+            userEmail,
+          },
+        } as any);
       }}
       onMockRecordComplete={(uri) => setVideoUris((p) => [...p, uri])}
     />
@@ -146,12 +145,14 @@ export default function TranslateScreen({
 function TranslateView({
   onEndConversation,
   onMockRecordComplete,
-  place = "immigration",
+  place = "personal",
+  userEmail = "",
   initialMessages = [],
 }: {
   onEndConversation?: (m: Message[]) => void;
   onMockRecordComplete?: (uri: string) => void;
   place?: string;
+  userEmail?: string;
   initialMessages?: Message[];
 }) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("sign");
@@ -169,10 +170,10 @@ function TranslateView({
   const [collectedWords, setCollectedWords] = useState<string[]>([]);
   const [lstmSentence, setLstmSentence] = useState("");
   const [lstmGenerating, setLstmGenerating] = useState(false);
-
   const [landmarks, setLandmarks] = useState<any>(null);
 
-  const { lstmStatus } = useLSTMSign({
+  // ── LSTM WebSocket 연결 ─────────────────────────────────────
+  const { lstmStatus, sendFrame } = useLSTMSign({
     onGesture: useCallback((name: string, conf: number) => {
       setLstmWord(name);
       setLstmConf(conf);
@@ -183,6 +184,11 @@ function TranslateView({
     serverUrl: LSTM_WS_URL,
   });
 
+  // ── 카메라 ref + 캡처 타이머 ────────────────────────────────
+  const cameraRef = useRef<ExpoCameraView>(null);
+  const captureTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── LSTM 단어 처리 ──────────────────────────────────────────
   const handleLstmAccept = () => {
     if (!lstmWord) return;
     setCollectedWords((p) => [...p, lstmWord]);
@@ -233,16 +239,38 @@ function TranslateView({
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
+  // ── 카메라 시작 — 프레임 캡처 타이머 포함 ──────────────────
   const startCamera = useCallback(() => {
     setCameraActive(true);
     setIsRecording(true);
     setRecSec(0);
     recTimerRef.current = setInterval(() => setRecSec((v) => v + 1), 1000);
-  }, []);
 
+    // 200ms마다 프레임 캡처 → 서버로 전송 (LSTM 추론)
+    captureTimerRef.current = setInterval(async () => {
+      if (!cameraRef.current) return;
+      try {
+        const photo = await (cameraRef.current as any).takePictureAsync({
+          quality: 0.3,
+          base64: true,
+          skipProcessing: true,
+          exif: false,
+          mute: true,
+          shutterSound: false,
+        });
+        if (photo?.base64) sendFrame(photo.base64);
+      } catch {}
+    }, 200);
+  }, [sendFrame]);
+
+  // ── 카메라 중지 ─────────────────────────────────────────────
   const stopCamera = useCallback(() => {
     setCameraActive(false);
     setIsRecording(false);
+    if (captureTimerRef.current) {
+      clearInterval(captureTimerRef.current);
+      captureTimerRef.current = null;
+    }
     if (recTimerRef.current) {
       clearInterval(recTimerRef.current);
       recTimerRef.current = null;
@@ -250,7 +278,7 @@ function TranslateView({
     onMockRecordComplete?.(`file://clip_${Date.now()}.mp4`);
   }, [onMockRecordComplete]);
 
-  // 텍스트 → 아바타 + 대화 동시 전송
+  // ── 텍스트 → 아바타 + 대화 동시 전송 ──────────────────────
   const submitText = useCallback(() => {
     const v = textInput.trim();
     if (!v) return;
@@ -279,17 +307,17 @@ function TranslateView({
       };
       setAiGuide(mockGuide);
       setAiLoading(false);
+      setActiveTab("avatar"); // ★ 아바타 탭으로 자동 이동
     }, 1200);
     setTextInput("");
   }, [textInput]);
 
-  // 텍스트 전송 → 아바타 재생 + 대화에도 추가
   const sendReply = useCallback(() => {
     if (!pendingReply) return;
-    addMsg("voice", pendingReply); // ← 대화에도 추가
+    addMsg("voice", pendingReply);
     setPendingReply(null);
     setAvatarPlaying(true);
-    setActiveTab("avatar"); // 아바타 탭으로 이동
+    setActiveTab("avatar");
     setTimeout(
       () => setAvatarPlaying(false),
       (aiGuide?.steps?.length ?? 1) * 3000 + 500,
@@ -314,9 +342,11 @@ function TranslateView({
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
+  // ── cleanup ─────────────────────────────────────────────────
   useEffect(
     () => () => {
       if (recTimerRef.current) clearInterval(recTimerRef.current);
+      if (captureTimerRef.current) clearInterval(captureTimerRef.current);
     },
     [],
   );
@@ -422,11 +452,12 @@ function TranslateView({
 
         <ScrollView
           ref={scrollRef}
+          style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.scrollContent}
         >
-          {/* ════ 수어 탭 — 카메라 + LSTM SubPanel ════ */}
+          {/* ════ 수어 탭 ════ */}
           {activeTab === "sign" && (
             <View style={{ gap: 14 }}>
               {/* 카메라 */}
@@ -444,12 +475,12 @@ function TranslateView({
                   landmarks={landmarks}
                   onStart={startCamera}
                   onStop={stopCamera}
+                  cameraRef={cameraRef}
                 />
               </View>
 
               {/* LSTM SubPanel */}
               <View style={s.card}>
-                {/* 헤더 */}
                 <View style={s.lstmHeader}>
                   <Text style={s.cardHdTxt}>🧠 LSTM 수어 인식</Text>
                   <Text style={[s.lstmStatus, { color: lstmStatusColor }]}>
@@ -458,7 +489,7 @@ function TranslateView({
                 </View>
 
                 {/* 현재 인식 단어 */}
-                <View style={[s.lstmBox, lstmWord && s.lstmBoxOn]}>
+                <View style={[s.lstmBox, lstmWord ? s.lstmBoxOn : null]}>
                   {lstmStatus !== "ready" ? (
                     <Text style={s.lstmHint}>
                       카메라를 켜면 손 동작을 자동으로 인식합니다
@@ -472,12 +503,23 @@ function TranslateView({
                           {Math.round(lstmConf * 100)}%
                         </Text>
                       </View>
-                      <TouchableOpacity
-                        style={s.acceptBtn}
-                        onPress={handleLstmAccept}
-                      >
-                        <Text style={s.acceptBtnTxt}>✅ 맞음</Text>
-                      </TouchableOpacity>
+                      <View style={s.actionBtns}>
+                        <TouchableOpacity
+                          style={s.rejectBtn}
+                          onPress={() => {
+                            setLstmWord("");
+                            setLstmConf(0);
+                          }}
+                        >
+                          <Text style={s.rejectBtnTxt}>❌ 아님</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={s.acceptBtn}
+                          onPress={handleLstmAccept}
+                        >
+                          <Text style={s.acceptBtnTxt}>✅ 맞음</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ) : (
                     <Text style={s.lstmHint}>
@@ -510,20 +552,32 @@ function TranslateView({
                   </View>
                 )}
 
-                {/* 문장 생성 버튼 */}
+                {/* 처음부터 + 문장 생성 버튼 */}
                 {collectedWords.length > 0 && !lstmSentence && (
-                  <TouchableOpacity
-                    style={[s.genBtn, lstmGenerating && { opacity: 0.6 }]}
-                    onPress={handleLstmGenerate}
-                    disabled={lstmGenerating}
-                    activeOpacity={0.85}
-                  >
-                    {lstmGenerating ? (
-                      <Text style={s.genBtnTxt}>생성 중...</Text>
-                    ) : (
-                      <Text style={s.genBtnTxt}>✨ 문장 생성</Text>
-                    )}
-                  </TouchableOpacity>
+                  <View style={s.genRow}>
+                    <TouchableOpacity
+                      style={s.resetBtn}
+                      onPress={() => {
+                        setCollectedWords([]);
+                        setLstmSentence("");
+                        setLstmWord("");
+                        setLstmConf(0);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={s.resetBtnTxt}>🔄 처음부터</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[s.genBtn, lstmGenerating && { opacity: 0.6 }]}
+                      onPress={handleLstmGenerate}
+                      disabled={lstmGenerating}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={s.genBtnTxt}>
+                        {lstmGenerating ? "생성 중..." : "✨ 문장 생성"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
 
                 {/* 생성된 문장 + 전송 */}
@@ -635,11 +689,12 @@ function TranslateView({
                     </View>
                   )}
                   {inputMode === "voice" && (
-                    <View style={s.voiceRow}>
-                      <Text style={s.voiceHint}>
-                        🎙️ 음성 입력은 추후 지원 예정입니다
-                      </Text>
-                    </View>
+                    <VoiceInput
+                      onResult={(text) => {
+                        setTextInput(text);
+                        setInputMode("text");
+                      }}
+                    />
                   )}
                 </>
               ) : (
@@ -772,6 +827,169 @@ function TranslateView({
 }
 
 // ══════════════════════════════════════════════════════════════
+//  VoiceInput — 음성 입력 컴포넌트 (expo-speech 기반 STT)
+//  @react-native-voice/voice 패키지 사용
+//  설치: npx expo install @react-native-voice/voice
+// ══════════════════════════════════════════════════════════════
+function VoiceInput({ onResult }: { onResult: (text: string) => void }) {
+  const [listening, setListening] = useState(false);
+  const [partial, setPartial] = useState("");
+  const [error, setError] = useState("");
+  const voiceRef = useRef<any>(null);
+
+  useEffect(() => {
+    let Voice: any = null;
+    try {
+      Voice = require("@react-native-voice/voice").default;
+      voiceRef.current = Voice;
+
+      Voice.onSpeechResults = (e: any) => {
+        const text = e.value?.[0] || "";
+        if (text) {
+          onResult(text);
+          setListening(false);
+          setPartial("");
+        }
+      };
+      Voice.onSpeechPartialResults = (e: any) => {
+        setPartial(e.value?.[0] || "");
+      };
+      Voice.onSpeechError = (e: any) => {
+        setError(
+          "음성 인식 오류: " + (e.error?.message || "다시 시도해주세요"),
+        );
+        setListening(false);
+      };
+      Voice.onSpeechEnd = () => setListening(false);
+    } catch {
+      setError(
+        "음성 패키지 미설치: npx expo install @react-native-voice/voice",
+      );
+    }
+    return () => {
+      Voice?.destroy?.().catch(() => {});
+    };
+  }, []);
+
+  const startListening = async () => {
+    const V = voiceRef.current;
+    if (!V) {
+      setError("음성 패키지가 설치되지 않았습니다.");
+      return;
+    }
+    try {
+      setError("");
+      setPartial("");
+      setListening(true);
+      await V.start("ko-KR");
+    } catch (e: any) {
+      setError("마이크 권한을 확인해주세요.");
+      setListening(false);
+    }
+  };
+
+  const stopListening = async () => {
+    try {
+      await voiceRef.current?.stop();
+    } catch {}
+    setListening(false);
+  };
+
+  return (
+    <View style={vs.container}>
+      {/* 마이크 버튼 */}
+      <TouchableOpacity
+        style={[vs.micBtn, listening && vs.micBtnActive]}
+        onPress={listening ? stopListening : startListening}
+        activeOpacity={0.85}
+      >
+        <Text style={vs.micIcon}>{listening ? "⏹" : "🎙️"}</Text>
+        <Text style={vs.micLabel}>
+          {listening ? "말하는 중... (탭하면 중지)" : "탭하여 말하기"}
+        </Text>
+      </TouchableOpacity>
+
+      {/* 인식 중인 텍스트 */}
+      {listening && partial ? (
+        <View style={vs.partialBox}>
+          <Text style={vs.partialTxt}>{partial}</Text>
+        </View>
+      ) : null}
+
+      {/* 오류 메시지 */}
+      {error ? (
+        <View style={vs.errorBox}>
+          <Text style={vs.errorTxt}>{error}</Text>
+        </View>
+      ) : null}
+
+      {/* 안내 */}
+      {!listening && !error && (
+        <Text style={vs.hint}>
+          마이크 버튼을 누르고 한국어로 말하면 자동으로 텍스트로 변환됩니다
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const vs = StyleSheet.create({
+  container: { gap: 12, alignItems: "center", paddingVertical: 8 },
+  micBtn: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#f0f0ff",
+    borderWidth: 2.5,
+    borderColor: "#5b5ef4",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    shadowColor: "#5b5ef4",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  micBtnActive: {
+    backgroundColor: "#5b5ef4",
+    borderColor: "#4338ca",
+    shadowOpacity: 0.4,
+  },
+  micIcon: { fontSize: 36 },
+  micLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#5b5ef4",
+    textAlign: "center",
+  },
+  partialBox: {
+    backgroundColor: "rgba(91,94,244,.08)",
+    borderRadius: 12,
+    padding: 12,
+    width: "100%",
+    borderWidth: 1.5,
+    borderColor: "rgba(91,94,244,.2)",
+  },
+  partialTxt: {
+    fontSize: 15,
+    color: "#5b5ef4",
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  errorBox: {
+    backgroundColor: "#fee2e2",
+    borderRadius: 10,
+    padding: 10,
+    width: "100%",
+  },
+  errorTxt: { fontSize: 12, color: "#dc2626", textAlign: "center" },
+  hint: { fontSize: 12, color: "#94a3b8", textAlign: "center", lineHeight: 18 },
+});
+
+// ══════════════════════════════════════════════════════════════
+//  ConversationPage
+// ══════════════════════════════════════════════════════════════
 function ConversationPage({
   messages = [],
   videoUris = [],
@@ -880,6 +1098,7 @@ function ConversationPage({
             </View>
           )}
         </View>
+
         <View style={styles.metaCard}>
           <Text style={styles.metaTitle}>📍 세션 요약</Text>
           <Text style={styles.metaText}>
@@ -895,6 +1114,7 @@ function ConversationPage({
             <Text style={styles.btnShareTxt}>🔗 스크립트 공유</Text>
           </TouchableOpacity>
         </View>
+
         <View style={styles.videoSectionCard}>
           <Text style={styles.sectionTitle}>
             🎬 녹화 영상 ({videos.length})
@@ -927,6 +1147,7 @@ function ConversationPage({
             ))
           )}
         </View>
+
         <View style={styles.chatLogCard}>
           <Text style={styles.sectionTitle}>💬 대화 스크립트</Text>
           {messages.map((msg) => (
@@ -975,6 +1196,8 @@ function ConversationPage({
   );
 }
 
+// ══════════════════════════════════════════════════════════════
+//  스타일
 // ══════════════════════════════════════════════════════════════
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
@@ -1057,6 +1280,7 @@ const s = StyleSheet.create({
     borderBottomColor: C.border,
     paddingHorizontal: 4,
     paddingTop: 6,
+    paddingBottom: 2,
   },
   tabBtn: {
     flex: 1,
@@ -1068,7 +1292,7 @@ const s = StyleSheet.create({
   tabBtnOn: { borderBottomColor: C.accent },
   tabBtnTxt: { fontSize: 10, fontWeight: "600", color: C.sub },
   tabBtnTxtOn: { color: C.accent, fontWeight: "800" },
-  scrollContent: { padding: 14, gap: 12 },
+  scrollContent: { padding: 14, gap: 12, paddingBottom: 80 },
   card: {
     backgroundColor: C.card,
     borderRadius: 16,
@@ -1079,8 +1303,6 @@ const s = StyleSheet.create({
   },
   cardHdTxt: { fontSize: 15, fontWeight: "800", color: C.text },
   cardHdSub: { fontSize: 12, fontWeight: "600", color: C.sub },
-
-  // LSTM SubPanel
   lstmHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1108,14 +1330,37 @@ const s = StyleSheet.create({
   lstmWordLabel: { fontSize: 11, color: C.sub, marginBottom: 2 },
   lstmWord: { fontSize: 22, fontWeight: "900", color: C.accent },
   lstmConf: { fontSize: 11, color: C.green, fontWeight: "700", marginTop: 2 },
+  actionBtns: { flexDirection: "column", gap: 6 },
+  rejectBtn: {
+    backgroundColor: "#fee2e2",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: "#fca5a5",
+    alignItems: "center",
+  },
+  rejectBtnTxt: { fontSize: 13, fontWeight: "800", color: "#dc2626" },
   acceptBtn: {
     backgroundColor: C.accent,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
     elevation: 4,
+    alignItems: "center",
   },
   acceptBtnTxt: { fontSize: 13, fontWeight: "800", color: "#fff" },
+  genRow: { flexDirection: "row", gap: 8 },
+  resetBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    alignItems: "center",
+    backgroundColor: C.card,
+  },
+  resetBtnTxt: { fontSize: 13, fontWeight: "700", color: C.sub },
   wordsLabel: { fontSize: 11, fontWeight: "700", color: C.sub },
   wordsRow: { flexDirection: "row", gap: 6, paddingBottom: 2 },
   wordChip: {
@@ -1132,6 +1377,7 @@ const s = StyleSheet.create({
   wordChipTxt: { fontSize: 12, fontWeight: "700", color: C.accent },
   wordChipDel: { fontSize: 11, color: "#9ca3af" },
   genBtn: {
+    flex: 2,
     backgroundColor: C.accent,
     borderRadius: 10,
     paddingVertical: 12,
@@ -1173,7 +1419,6 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   sendBtnTxt: { fontSize: 13, fontWeight: "800", color: "#fff" },
-
   goTextBtn: {
     paddingVertical: 12,
     borderRadius: 12,

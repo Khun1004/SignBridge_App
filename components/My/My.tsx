@@ -3,7 +3,7 @@
 //  탭: 등록기록 | 커뮤니티 | 프로필
 // ══════════════════════════════════════════════════════════════
 import { communityApi, myPageApi, personalApi } from "@/components/api/api";
-import Registration from "@/components/Community/Registration";
+import Registration from "@/components/Community/RegistrationCommunity";
 import { useAuth } from "@/components/contexts/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";

@@ -1,9 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 //  components/Translate/SignCameraView.tsx
-//  웹 번역기처럼:
-//  - 카메라 위에 MediaPipe 손/팔 랜드마크 오버레이
-//  - 인식된 수어 자막 표시
-//  - 수어 선택 버튼 제거
+//  원본과 동일 — 카메라 + 랜드마크 오버레이만 담당
+//  프레임 캡처는 translate.tsx에서 처리
 // ══════════════════════════════════════════════════════════════
 import {
   CameraType,
@@ -65,9 +63,8 @@ const LANDMARK_HTML = `<!DOCTYPE html>
 <body>
 <canvas id="cv"></canvas>
 <script>
-const cv   = document.getElementById('cv');
-const ctx  = cv.getContext('2d');
-let landmarks = null;
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
 
 function resize() {
   cv.width  = window.innerWidth;
@@ -76,7 +73,6 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// 손 연결선
 const HAND_CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,4],
   [0,5],[5,6],[6,7],[7,8],
@@ -86,96 +82,57 @@ const HAND_CONNECTIONS = [
   [5,9],[9,13],[13,17],
 ];
 
-// 포즈(팔) 연결선
-const POSE_CONNECTIONS = [
-  [11,12],[11,13],[13,15],[12,14],[14,16],
-  [11,23],[12,24],[23,24],
-];
-
 function drawLandmarks(data) {
   ctx.clearRect(0, 0, cv.width, cv.height);
   if (!data) return;
+  const W = cv.width, H = cv.height;
 
-  const W = cv.width;
-  const H = cv.height;
-
-  // ── 손 랜드마크 ──────────────────────────────────────────
   if (data.hands) {
     data.hands.forEach((hand) => {
-      const pts = hand.landmarks;
-      // 연결선
+      // hand = [{x,y,z}, ...] 형식 (서버에서 보낸 형식)
+      const pts = hand;
       ctx.strokeStyle = '#00ff88';
       ctx.lineWidth   = 2;
       HAND_CONNECTIONS.forEach(([a,b]) => {
         if (!pts[a] || !pts[b]) return;
         ctx.beginPath();
-        ctx.moveTo(pts[a][0] * W, pts[a][1] * H);
-        ctx.lineTo(pts[b][0] * W, pts[b][1] * H);
+        ctx.moveTo(pts[a].x * W, pts[a].y * H);
+        ctx.lineTo(pts[b].x * W, pts[b].y * H);
         ctx.stroke();
       });
-      // 관절 점
       pts.forEach((p, i) => {
         ctx.beginPath();
-        ctx.arc(p[0]*W, p[1]*H, i===0?5:3, 0, Math.PI*2);
+        ctx.arc(p.x*W, p.y*H, i===0?5:3, 0, Math.PI*2);
         ctx.fillStyle = i===0 ? '#ff6b35' : '#00ff88';
         ctx.fill();
       });
     });
   }
-
-  // ── 포즈(팔) 랜드마크 ────────────────────────────────────
-  if (data.pose) {
-    const pts = data.pose;
-    ctx.strokeStyle = '#7c6fff';
-    ctx.lineWidth   = 2.5;
-    POSE_CONNECTIONS.forEach(([a,b]) => {
-      if (!pts[a] || !pts[b]) return;
-      if (pts[a][3] < 0.5 || pts[b][3] < 0.5) return; // visibility
-      ctx.beginPath();
-      ctx.moveTo(pts[a][0]*W, pts[a][1]*H);
-      ctx.lineTo(pts[b][0]*W, pts[b][1]*H);
-      ctx.stroke();
-    });
-    pts.forEach((p, i) => {
-      if (p[3] < 0.5) return;
-      ctx.beginPath();
-      ctx.arc(p[0]*W, p[1]*H, 4, 0, Math.PI*2);
-      ctx.fillStyle = '#7c6fff';
-      ctx.fill();
-    });
-  }
 }
 
-// React Native → WebView 메시지
 document.addEventListener('message', (e) => {
-  try { landmarks = JSON.parse(e.data); drawLandmarks(landmarks); } catch {}
+  try { drawLandmarks(JSON.parse(e.data)); } catch {}
 });
 window.addEventListener('message', (e) => {
-  try { landmarks = JSON.parse(e.data); drawLandmarks(landmarks); } catch {}
+  try { drawLandmarks(JSON.parse(e.data)); } catch {}
 });
 </script>
 </body>
 </html>`;
 
 // ─── 타입 ─────────────────────────────────────────────────────
-export interface SignButton {
-  emoji: string;
-  name: string;
-  meaning: string;
-  color: string;
-}
-
 interface CameraViewProps {
   isActive: boolean;
   isRecording: boolean;
   recSec: number;
-  currentWord: string; // LSTM 인식 단어
-  currentConf: number; // LSTM 신뢰도
+  currentWord: string;
+  currentConf: number;
   lstmStatus: "disconnected" | "connecting" | "ready" | "error";
   onStart: () => void;
   onStop: () => void;
-  // 랜드마크 데이터 (Python 서버에서 받은 것)
   landmarks?: { hands?: any[]; pose?: any[] } | null;
+  // ★ 카메라 ref를 부모(translate.tsx)로 노출 — 프레임 캡처용
+  cameraRef?: React.RefObject<ExpoCameraView | null>;
 }
 
 function fmtTime(sec: number) {
@@ -193,14 +150,21 @@ export default function SignCameraView({
   onStart,
   onStop,
   landmarks,
+  cameraRef,
 }: CameraViewProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraType>("front");
   const webViewRef = useRef<WebView>(null);
 
-  // 랜드마크가 바뀌면 WebView에 전송
+  // 랜드마크가 바뀌면 WebView에 전송 (오버레이 그리기)
   React.useEffect(() => {
-    if (!landmarks) return;
+    if (!landmarks) {
+      // 손 없을 때 오버레이 지우기
+      webViewRef.current?.injectJavaScript(`
+        window.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(null) })); true;
+      `);
+      return;
+    }
     webViewRef.current?.injectJavaScript(`
       window.dispatchEvent(new MessageEvent('message', {
         data: JSON.stringify(${JSON.stringify(landmarks)})
@@ -265,21 +229,10 @@ export default function SignCameraView({
       <View style={st.vidBox}>
         {isActive ? (
           <>
-            {/* 카메라 */}
-            <ExpoCameraView style={st.camera} facing={facing} />
+            {/* 카메라 — ref를 부모에서 전달받아 연결 */}
+            <ExpoCameraView ref={cameraRef} style={st.camera} facing={facing} />
 
-            {/* MediaPipe 랜드마크 오버레이 */}
-            <View style={st.landmarkOverlay} pointerEvents="none">
-              <WebView
-                ref={webViewRef}
-                source={{ html: LANDMARK_HTML }}
-                style={{ flex: 1, backgroundColor: "transparent" }}
-                scrollEnabled={false}
-                bounces={false}
-                javaScriptEnabled
-                originWhitelist={["*"]}
-              />
-            </View>
+            {/* 랜드마크 오버레이 제거 — 깔끔한 카메라 화면 */}
 
             {/* REC 배지 */}
             {isRecording && (
@@ -313,7 +266,7 @@ export default function SignCameraView({
               </Text>
             </View>
 
-            {/* 자막 바 — 인식된 단어 표시 */}
+            {/* 자막 바 */}
             {currentWord ? (
               <View style={st.subtitleBar}>
                 <View style={st.subtitleContent}>
@@ -349,8 +302,6 @@ export default function SignCameraView({
 
 const st = StyleSheet.create({
   wrapper: { gap: 12 },
-
-  // 권한
   permBox: {
     height: 200,
     alignItems: "center",
@@ -371,8 +322,6 @@ const st = StyleSheet.create({
     backgroundColor: C.accent,
   },
   permBtnTxt: { fontSize: 13, fontWeight: "700", color: "#fff" },
-
-  // Start/Stop
   camRow: { flexDirection: "row", gap: 10 },
   btnStart: {
     flex: 1,
@@ -390,8 +339,6 @@ const st = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.35 },
   btnTxt: { fontSize: 14, fontWeight: "800", color: "#fff" },
-
-  // 카메라
   vidBox: {
     height: 280,
     borderRadius: 16,
@@ -399,13 +346,10 @@ const st = StyleSheet.create({
     backgroundColor: "#0f0f1a",
   },
   camera: { ...StyleSheet.absoluteFillObject },
-
-  // 랜드마크 오버레이
   landmarkOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "transparent",
   },
-
   vidPh: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
   vidPhEmoji: { fontSize: 40 },
   vidPhTxt: {
@@ -414,8 +358,6 @@ const st = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
-
-  // REC
   recBadge: {
     position: "absolute",
     top: 10,
@@ -430,8 +372,6 @@ const st = StyleSheet.create({
   },
   recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" },
   recBadgeTxt: { fontSize: 12, fontWeight: "700", color: "#fff" },
-
-  // 전환 버튼
   flipBtn: {
     position: "absolute",
     top: 10,
@@ -444,8 +384,6 @@ const st = StyleSheet.create({
     justifyContent: "center",
   },
   flipBtnTxt: { fontSize: 18 },
-
-  // LSTM 상태
   lstmBadge: {
     position: "absolute",
     top: 10,
@@ -456,8 +394,6 @@ const st = StyleSheet.create({
     paddingVertical: 4,
   },
   lstmBadgeTxt: { fontSize: 11, fontWeight: "700", color: "#fff" },
-
-  // 자막
   subtitleBar: {
     position: "absolute",
     bottom: 0,

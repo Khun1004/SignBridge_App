@@ -66,24 +66,38 @@ function AppShell() {
     (segments.length === 1 || currentTab === "index");
   const isMyPage = segments.includes("my");
   const isDemoPage = segments.includes("demopage") || segments.includes("demo");
-  const isRegistration = segments.includes("registration");
+  const isRegistration =
+    segments.includes("registration") ||
+    segments.includes("registrationpersonal") ||
+    segments.includes("registrationcommunity");
   const isCommDetail = segments.includes("communitypersonaldetail");
   const isCommunitySubView =
     currentTab === "community" && communityView !== "list";
+  const isConversation = segments.includes("conversationpage");
+
+  // ★ 검색 페이지 감지
+  const isSearch = segments.includes("search");
+
   const isBackHeader =
     isMyPage ||
     isDemoPage ||
     isRegistration ||
     isCommDetail ||
-    isCommunitySubView;
+    isCommunitySubView ||
+    isConversation ||
+    isSearch; // ★ 추가
 
   const [menuOpen, setMenuOpen] = useState(false);
 
   const getBackHeaderTitle = () => {
     if (isMyPage) return "마이페이지";
     if (isDemoPage) return "소통 데모 체험";
-    if (isRegistration) return "프로필 등록";
+    if (segments.includes("registrationpersonal")) return "개인 기록 저장";
+    if (segments.includes("registrationcommunity")) return "커뮤니티 등록";
+    if (isRegistration) return "대화 기록 등록";
     if (isCommDetail) return "프로필 상세";
+    if (isConversation) return "대화 요약 보고서";
+    if (isSearch) return "검색"; // ★ 추가
     if (isCommunitySubView)
       return (
         communityTitle ||
@@ -135,21 +149,21 @@ function AppShell() {
     <SafeAreaView style={styles.root} edges={["top"]}>
       {/* ── 헤더 ── */}
       {isBackHeader ? (
-        /* 마이페이지 / 데모 → 다크 헤더 */
         <View style={styles.myHeader}>
           <TouchableOpacity style={styles.myHeaderLeft} onPress={handleBack}>
             <Ionicons name="chevron-back" size={24} color="#a78bfa" />
             <Text style={styles.myHeaderTitle}>{getBackHeaderTitle()}</Text>
           </TouchableOpacity>
           <View style={styles.myHeaderRight}>
-            {/* 검색 */}
-            <TouchableOpacity
-              style={styles.myHeaderIconBtn}
-              onPress={() => router.navigate("/(tabs)/dictionary" as any)}
-            >
-              <Ionicons name="search-outline" size={22} color="#94a3b8" />
-            </TouchableOpacity>
-            {/* 알림 */}
+            {/* 검색 페이지에서는 검색 아이콘 숨김 */}
+            {!isSearch && (
+              <TouchableOpacity
+                style={styles.myHeaderIconBtn}
+                onPress={() => router.navigate("/search" as any)}
+              >
+                <Ionicons name="search-outline" size={22} color="#94a3b8" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.myHeaderIconBtn}
               onPress={() => Alert.alert("알림", "알림 센터를 엽니다.")}
@@ -160,7 +174,6 @@ function AppShell() {
                 color="#94a3b8"
               />
             </TouchableOpacity>
-            {/* 홈 */}
             <TouchableOpacity
               style={styles.myHeaderIconBtn}
               onPress={() => {
@@ -176,7 +189,6 @@ function AppShell() {
           </View>
         </View>
       ) : isHome ? (
-        /* 홈 → AppHeader */
         <AppHeader
           loggedIn={loggedIn}
           displayName={displayName}
@@ -196,13 +208,12 @@ function AppShell() {
           onMyPage={goMyPage}
         />
       ) : (
-        /* 서브 탭 → 딥 블루 헤더 */
         <View style={styles.subHeader}>
           <Text style={styles.subHeaderTitle}>{getHeaderTitle()}</Text>
           <View style={styles.subHeaderRight}>
             <TouchableOpacity
               style={styles.subHeaderIconBtn}
-              onPress={() => router.navigate("/(tabs)/dictionary" as any)}
+              onPress={() => router.navigate("/search" as any)}
             >
               <Ionicons name="search-outline" size={22} color="#ccc" />
             </TouchableOpacity>
@@ -237,13 +248,17 @@ function AppShell() {
           <Stack.Screen name="my" />
           <Stack.Screen name="demopage" />
           <Stack.Screen name="demo" />
-          <Stack.Screen name="registration" />
           <Stack.Screen name="communitypersonaldetail" />
+          <Stack.Screen name="conversationpage" />
+          <Stack.Screen name="registration" />
+          <Stack.Screen name="registrationpersonal" />
+          <Stack.Screen name="registrationcommunity" />
+          <Stack.Screen name="search" /> {/* ★ 추가 */}
           <Stack.Screen name="modal" options={{ presentation: "modal" }} />
         </Stack>
       </View>
 
-      {/* ══ 홈 탭 — 플로팅 버튼 ══ */}
+      {/* ── 홈 탭 플로팅 버튼 ── */}
       {isHome && (
         <View style={styles.floatingSidebar}>
           <TouchableOpacity
@@ -291,7 +306,7 @@ function AppShell() {
         </View>
       )}
 
-      {/* ══ 다른 탭 — 케밥 메뉴 ══ */}
+      {/* ── 다른 탭 케밥 메뉴 ── */}
       {!isHome && !isBackHeader && (
         <View style={styles.kebabWrap}>
           {menuOpen && (
@@ -363,15 +378,13 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#fff" },
   body: { flex: 1 },
-
-  // ── 마이페이지 / 데모 헤더 → 다크 ──
   myHeader: {
     height: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    backgroundColor: "#0f172a", // ← 딥 네이비 (블랙에 가까운)
+    backgroundColor: "#0f172a",
     borderBottomLeftRadius: 18,
     borderBottomRightRadius: 18,
     borderBottomWidth: 1,
@@ -386,8 +399,6 @@ const styles = StyleSheet.create({
   myHeaderTitle: { fontSize: 18, fontWeight: "800", color: "#f1f5f9" },
   myHeaderRight: { flexDirection: "row", alignItems: "center", gap: 12 },
   myHeaderIconBtn: { padding: 6 },
-
-  // ── 서브 탭 헤더 ──
   subHeader: {
     height: 56,
     flexDirection: "row",
@@ -410,8 +421,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   myAvatarTxt: { fontSize: 12, fontWeight: "800", color: "#fff" },
-
-  // ── 홈 플로팅 사이드바 ──
   floatingSidebar: {
     position: "absolute",
     right: 16,
@@ -443,8 +452,6 @@ const styles = StyleSheet.create({
   fsbChat: { backgroundColor: "#7c6fff" },
   fsbCall: { backgroundColor: "#10b981" },
   fsbLabel: { fontSize: 10, fontWeight: "700", color: "#fff", marginTop: 2 },
-
-  // ── 케밥 메뉴 ──
   kebabWrap: {
     position: "absolute",
     right: 20,

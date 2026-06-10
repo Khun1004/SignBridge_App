@@ -1,6 +1,10 @@
+// ══════════════════════════════════════════════════════════════
+//  app/conversationpage.tsx  — 웹 ConversationPage 디자인 참조
+// ══════════════════════════════════════════════════════════════
+import { useAuth } from "@/components/contexts/AuthContext";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
   Modal,
   SafeAreaView,
   ScrollView,
@@ -10,11 +14,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-// TODO: 프로젝트 경로에 맞게 임포트 경로를 수정하세요.
-// import { conversationApi } from '../../../assets/components/api/api';
 
-// ─── 색상 토큰 및 디자인 정의 ─────────────────────────────────
-const CP = {
+const C = {
   bg: "#f5f5f7",
   surface: "#ffffff",
   border: "#e8e8ec",
@@ -22,23 +23,29 @@ const CP = {
   textDim: "#6b6b80",
   textMute: "#aeaec0",
   accent: "#5b45e0",
-  accent2: "#7c6fff",
   signBg: "#f2f0ff",
   signBorder: "#ddd8ff",
-  voiceFrom: "#6c5ce7",
-  green: "#00b894",
-  red: "#e55353",
-  yellow: "#f0a500",
+  voiceBg: "#f0fdf4",
+  voiceBorder: "rgba(5,150,105,0.15)",
+  dark: "#13131c",
+  darkSurface: "#1a1a26",
+  darkBorder: "#2a2a38",
 };
 
-// ─── 타입 정의 ────────────────────────────────────────────────
+const PLACE_LABEL: Record<string, string> = {
+  immigration: "출입국관리사무소",
+  hospital: "병원",
+  police: "경찰서",
+  airport: "공항",
+  personal: "개인 사용자",
+};
+
 interface Message {
   id: number;
   type: "sign" | "voice";
   text: string;
   time: string;
 }
-
 interface VideoItem {
   id: number;
   localUrl: string;
@@ -46,28 +53,26 @@ interface VideoItem {
   uploadStatus: "uploading" | "done" | "error";
 }
 
-interface ConversationPageProps {
-  messages: Message[];
-  videoBlobs?: any[]; // 웹 환경 호환용 혹은 비디오 리스트
-  videoUris?: string[]; // React Native 친화적인 로컬 파일 URI 배열 (추천)
-  onBack: () => void;
-  onRegister: (videos: VideoItem[]) => void;
-  onVideosChange?: (videos: VideoItem[]) => void;
-  userEmail?: string;
-  place?: string;
-}
+export default function ConversationPageScreen() {
+  const router = useRouter();
+  const { orgType } = useAuth();
+  const params = useLocalSearchParams<{
+    messages: string;
+    videoUris: string;
+    place: string;
+    userEmail: string;
+  }>();
 
-export default function ConversationPage({
-  messages = [],
-  videoBlobs = [],
-  videoUris = [],
-  onBack,
-  onRegister,
-  onVideosChange,
-  userEmail = "",
-  place = "immigration",
-}: ConversationPageProps) {
-  const processedRef = useRef<Set<number | string>>(new Set());
+  const messages: Message[] = params.messages
+    ? JSON.parse(params.messages)
+    : [];
+  const videoUris: string[] = params.videoUris
+    ? JSON.parse(params.videoUris)
+    : [];
+  const place = params.place || "personal";
+  const userEmail = params.userEmail || "";
+
+  const processedRef = useRef<Set<string>>(new Set());
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "done" | "error"
@@ -83,337 +88,348 @@ export default function ConversationPage({
     setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // 부모(App) 컴포넌트에 영상 상태 동기화
-  const updateVideos = useCallback(
-    (updater: any) => {
-      setVideos((prev) => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        onVideosChange?.(next);
-        return next;
-      });
-    },
-    [onVideosChange],
-  );
-
-  // ─── 비디오 파일(URI/Blob) 처리 및 업로드 시뮬레이션 ─────────────────
-  const combinedVideos = videoUris.length > 0 ? videoUris : videoBlobs;
-
   useEffect(() => {
-    if (!combinedVideos?.length) return;
-
-    combinedVideos.forEach((item, idx) => {
-      if (!item) return;
-      // 인덱스나 경로를 기반으로 중복 처리 방지
-      const uniqueKey = typeof item === "string" ? item : idx;
-      if (processedRef.current.has(uniqueKey)) return;
-      processedRef.current.add(uniqueKey);
-
-      // 로컬 경로 할당 (React Native는 파일 시스템 경로 string을 그대로 사용 가능)
-      const localUrl = typeof item === "string" ? item : "blob_mock_uri_" + idx;
+    if (!videoUris.length) return;
+    videoUris.forEach((uri, idx) => {
+      if (!uri || processedRef.current.has(uri)) return;
+      processedRef.current.add(uri);
       const vidId = Date.now() + idx * 17;
-
-      updateVideos((prev: VideoItem[]) => [
-        ...prev,
-        {
-          id: vidId,
-          localUrl,
-          serverId: null,
-          uploadStatus: "uploading",
-        },
+      setVideos((p) => [
+        ...p,
+        { id: vidId, localUrl: uri, serverId: null, uploadStatus: "uploading" },
       ]);
-
-      // 비동기 서버 업로드 프로세스 수행
-      (async () => {
-        try {
-          // 예시: const result = await conversationApi.uploadVideo(item, userEmail);
-          // 여기서는 가상 타이머로 업로드 성공 시뮬레이션을 수행합니다.
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const mockServerId = `V-${Math.floor(Math.random() * 90000) + 10000}`;
-
-          updateVideos((prev: VideoItem[]) =>
-            prev.map((v) =>
-              v.id === vidId
-                ? { ...v, serverId: mockServerId, uploadStatus: "done" }
-                : v,
-            ),
-          );
-        } catch (e) {
-          console.error("[UPLOAD ERROR]", e);
-          updateVideos((prev: VideoItem[]) =>
-            prev.map((v) =>
-              v.id === vidId ? { ...v, uploadStatus: "error" } : v,
-            ),
-          );
-          showToast(
-            "err",
-            `영상 ${idx + 1} 서버 저장 실패. 로컬에서 재생 가능합니다.`,
-          );
-        }
-      })();
+      setTimeout(() => {
+        const sid = `V-${Math.floor(Math.random() * 90000) + 10000}`;
+        setVideos((p) =>
+          p.map((v) =>
+            v.id === vidId ? { ...v, serverId: sid, uploadStatus: "done" } : v,
+          ),
+        );
+      }, 2000);
     });
-  }, [combinedVideos?.length]);
+  }, []);
 
-  // ─── 마운트 시 대화 기록 저장 자동 트리거 (1회) ────────────────────
   const savedRef = useRef(false);
   useEffect(() => {
     if (savedRef.current || !messages.length) return;
     savedRef.current = true;
+    setSaveStatus("saving");
+    setTimeout(() => {
+      setSaveStatus("done");
+      showToast("ok", `대화 기록 저장 완료 (${messages.length}개)`);
+    }, 1500);
+  }, []);
 
-    (async () => {
-      setSaveStatus("saving");
-      try {
-        // 예시: await conversationApi.saveHistory(messages, userEmail, place);
-        await new Promise((resolve) => setTimeout(resolve, 1500)); // 시뮬레이션
-        setSaveStatus("done");
-        showToast("ok", "대화 내용이 서버에 안전하게 자동 저장되었습니다.");
-      } catch (error) {
-        setSaveStatus("error");
-        showToast("err", "대화 기록 서버 저장 실패. 네트워크를 확인하세요.");
-      }
-    })();
-  }, [messages, userEmail, place, showToast]);
-
-  // 통계 계산
   const signCount = messages.filter((m) => m.type === "sign").length;
   const voiceCount = messages.filter((m) => m.type === "voice").length;
+  const startTime = messages[0]?.time || "";
+  const endTime = messages[messages.length - 1]?.time || "";
 
-  // 공유 기능 (모바일 전용 내보내기/인쇄 대체)
   const handleShare = async () => {
     try {
-      const textDump = messages
-        .map(
-          (m) =>
-            `[${m.time}] ${m.type === "sign" ? "청각장애인" : "담당자"}: ${m.text}`,
-        )
-        .join("\n");
       await Share.share({
-        title: `수어 번역 대화 기록 (${place})`,
-        message: textDump,
+        title: `SignBridge 대화 기록 (${PLACE_LABEL[place] || place})`,
+        message: messages
+          .map(
+            (m) =>
+              `[${m.time}] ${m.type === "sign" ? "🧏 수어" : "🙋 담당자"}: ${m.text}`,
+          )
+          .join("\n"),
       });
-    } catch (error) {
-      console.log(error);
-    }
+    } catch {}
+  };
+
+  const handleRegister = () => {
+    // 개인 사용자 → registerpersonal, 기관 담당자 → registration
+    const isPersonal =
+      !orgType ||
+      orgType === "personal" ||
+      orgType === "개인" ||
+      orgType === "개인 사용자";
+
+    router.push({
+      pathname: (isPersonal ? "/registrationpersonal" : "/registration") as any,
+      params: {
+        messages: JSON.stringify(messages),
+        videoUris: JSON.stringify(videoUris),
+        place,
+        userEmail,
+      },
+    });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* ── 상단 토스트 메시지 알림 ── */}
+    <SafeAreaView style={st.safe}>
+      {/* 토스트 */}
       {toast && (
         <View
-          style={[
-            styles.toast,
-            toast.type === "ok" ? styles.toastOk : styles.toastErr,
-          ]}
+          style={[st.toast, toast.type === "ok" ? st.toastOk : st.toastErr]}
         >
-          <Text
-            style={toast.type === "ok" ? styles.toastOkTxt : styles.toastErrTxt}
-          >
-            {toast.type === "ok" ? "✅ " : "❌ "} {toast.msg}
+          <Text style={toast.type === "ok" ? st.toastOkTxt : st.toastErrTxt}>
+            {toast.type === "ok" ? "✅ " : "⚠️ "}
+            {toast.msg}
           </Text>
         </View>
       )}
 
-      {/* ── 헤더 영역 ── */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.btnBack}
-          onPress={onBack}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.btnBackTxt}>◀ 돌아가기</Text>
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <Text style={styles.title}>대화 요약 보고서</Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statSign}>
-              <Text style={styles.statSignTxt}>수어 인식 {signCount}회</Text>
+      {/* 헤더 */}
+      <View style={st.header}>
+        <View style={st.headerLeft}>
+          {/* 저장 상태 배지 */}
+          {saveStatus === "saving" && (
+            <View style={[st.saveBadge, st.saveBadgeSaving]}>
+              <Text style={st.saveBadgeSavingTxt}>💾 저장 중...</Text>
             </View>
-            <View style={styles.statVoice}>
-              <Text style={styles.statVoiceTxt}>
-                담당자 응답 {voiceCount}회
-              </Text>
+          )}
+          {saveStatus === "done" && (
+            <View style={[st.saveBadge, st.saveBadgeDone]}>
+              <Text style={st.saveBadgeDoneTxt}>✅ 저장 완료</Text>
             </View>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.btnRegister}
-          onPress={() => {
-            onRegister(videos);
-            Alert.alert("완료", "대화 요약본 등록이 완료되었습니다.");
-          }}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.btnRegisterTxt}>등록하기</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollBody}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── 로그인 상태 안내 배너 ── */}
-        {!userEmail ? (
-          <View style={styles.loginWarn}>
-            <Text style={styles.loginWarnTxt}>
-              ⚠️ 비로그인 상태입니다. 기록이 마이페이지에 매핑되지 않을 수
-              있습니다.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.saveStatusCard}>
-            <Text style={styles.sectionTitle}>💾 대화 기록 저장 상태</Text>
-            {saveStatus === "saving" && (
-              <View style={[styles.badge, styles.badgeSaving]}>
-                <Text style={styles.badgeSavingTxt}>⏳ 서버 저장 중...</Text>
-              </View>
-            )}
-            {saveStatus === "done" && (
-              <View style={[styles.badge, styles.badgeDone]}>
-                <Text style={styles.badgeDoneTxt}>✅ 서버 저장 완료</Text>
-              </View>
-            )}
-            {saveStatus === "error" && (
-              <View style={[styles.badge, styles.badgeErr]}>
-                <Text style={styles.badgeErrTxt}>
-                  ❌ 저장 실패 (재시도 필요)
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* ── 세션 메타 정보 카드 ── */}
-        <View style={styles.metaCard}>
-          <Text style={styles.metaTitle}>📍 대화 정보</Text>
-          <Text style={styles.metaText}>
-            • 장소:{" "}
-            <Text style={{ fontWeight: "700" }}>
-              {place === "immigration" ? "출입국사무소" : place}
-            </Text>
-          </Text>
-          {userEmail ? (
-            <Text style={styles.metaText}>• 담당자 계정: {userEmail}</Text>
-          ) : null}
-          <Text style={styles.metaText}>
-            • 대화 일시: {new Date().toLocaleDateString("ko-KR")}{" "}
-            {new Date().toLocaleTimeString("ko-KR", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </Text>
-
-          <TouchableOpacity style={styles.btnShare} onPress={handleShare}>
-            <Text style={styles.btnShareTxt}>
-              🔗 대화 텍스트 내보내기 / 공유
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── 녹화된 수어 영상 목록 카드 ── */}
-        <View style={styles.videoSectionCard}>
-          <Text style={styles.sectionTitle}>
-            🎬 녹화된 수어 세션 ({videos.length}개)
-          </Text>
-          {videos.length === 0 ? (
-            <Text style={styles.emptyText}>
-              이번 대화에서 녹화된 수어 영상이 없습니다.
-            </Text>
-          ) : (
-            <View style={styles.videoGrid}>
-              {videos.map((vid, idx) => (
-                <View key={vid.id} style={styles.videoCard}>
-                  <View style={styles.videoThumbnailPlaceholder}>
-                    <Text style={{ fontSize: 24 }}>📹</Text>
-                    <Text style={styles.videoThumbTxt}>영상 {idx + 1}</Text>
-                  </View>
-
-                  <View style={styles.videoCardBody}>
-                    <Text style={styles.videoStatusTxt}>
-                      {vid.uploadStatus === "uploading" &&
-                        "⏳ 클라우드 업로드 중..."}
-                      {vid.uploadStatus === "done" &&
-                        `✅ 클라우드 저장 완료\n(ID: ${vid.serverId})`}
-                      {vid.uploadStatus === "error" &&
-                        "❌ 업로드 실패 (로컬 재생 가능)"}
-                    </Text>
-
-                    <TouchableOpacity
-                      style={styles.btnPlayVid}
-                      onPress={() => setModalVideo(vid)}
-                    >
-                      <Text style={styles.btnPlayVidTxt}>▶ 영상 확인</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
+          )}
+          {saveStatus === "error" && (
+            <View style={[st.saveBadge, st.saveBadgeErr]}>
+              <Text style={st.saveBadgeErrTxt}>⚠️ 저장 실패</Text>
             </View>
           )}
         </View>
 
-        {/* ── 대화 로그 스크립트 복기 ── */}
-        <View style={styles.chatLogCard}>
-          <Text style={styles.sectionTitle}>💬 대화 타임라인 스크립트</Text>
-          {messages.map((msg, idx) => (
-            <View
-              key={msg.id || idx}
-              style={[
-                styles.chatRow,
-                msg.type === "voice" ? styles.chatRowRight : styles.chatRowLeft,
-              ]}
-            >
+        <View style={st.headerCenter}>
+          <Text style={st.headerTitle}>대화 기록</Text>
+          {startTime ? (
+            <Text style={st.headerSub}>
+              {startTime} ~ {endTime}
+            </Text>
+          ) : null}
+          <View style={st.headerStats}>
+            <Text style={st.headerStatMute}>총 {messages.length}개</Text>
+            <View style={st.statSignBadge}>
+              <Text style={st.statSignTxt}>🧏 {signCount}</Text>
+            </View>
+            <View style={st.statVoiceBadge}>
+              <Text style={st.statVoiceTxt}>🙋 {voiceCount}</Text>
+            </View>
+            {videos.length > 0 && (
+              <View style={st.statVideoBadge}>
+                <Text style={st.statVideoTxt}>🎬 {videos.length}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <TouchableOpacity style={st.btnRegister} onPress={handleRegister}>
+          <Text style={st.btnRegisterTxt}>
+            {!orgType ||
+            orgType === "personal" ||
+            orgType === "개인" ||
+            orgType === "개인 사용자"
+              ? "💾 개인 저장"
+              : "💾 등록하기"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 비로그인 경고 */}
+      {!userEmail && (
+        <View style={st.loginWarn}>
+          <Text style={st.loginWarnTxt}>
+            ⚠️ 로그인이 필요합니다. 대화 기록은 서버에 저장되지 않습니다.
+          </Text>
+        </View>
+      )}
+
+      <ScrollView
+        contentContainerStyle={st.scrollBody}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 세션 정보 카드 */}
+        <View style={st.metaCard}>
+          <View style={st.metaRow}>
+            <Text style={st.metaIcon}>📍</Text>
+            <Text style={st.metaLabel}>장소</Text>
+            <Text style={st.metaValue}>
+              {PLACE_LABEL[place] || place || "미설정"}
+            </Text>
+          </View>
+          {userEmail ? (
+            <View style={st.metaRow}>
+              <Text style={st.metaIcon}>👤</Text>
+              <Text style={st.metaLabel}>담당자</Text>
+              <Text style={st.metaValue}>{userEmail}</Text>
+            </View>
+          ) : null}
+          <View style={st.metaRow}>
+            <Text style={st.metaIcon}>🕐</Text>
+            <Text style={st.metaLabel}>일시</Text>
+            <Text style={st.metaValue}>
+              {new Date().toLocaleDateString("ko-KR")}{" "}
+              {new Date().toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Text>
+          </View>
+          <TouchableOpacity style={st.btnShare} onPress={handleShare}>
+            <Text style={st.btnShareTxt}>💾 텍스트 내보내기 / 공유</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 대화 목록 */}
+        <View style={st.chatCard}>
+          <Text style={st.sectionTitle}>💬 대화 타임라인</Text>
+          {messages.length === 0 ? (
+            <View style={st.emptyBox}>
+              <Text style={{ fontSize: 44, opacity: 0.35 }}>💬</Text>
+              <Text style={st.emptyTxt}>저장된 대화 기록이 없습니다.</Text>
+            </View>
+          ) : (
+            messages.map((msg, idx) => (
               <View
+                key={msg.id || idx}
                 style={[
-                  styles.bubble,
-                  msg.type === "voice" ? styles.bubbleVoice : styles.bubbleSign,
+                  st.msgRow,
+                  msg.type === "voice" ? st.msgRowRight : st.msgRowLeft,
                 ]}
               >
-                <Text style={styles.bubbleSpeaker}>
-                  {msg.type === "sign"
-                    ? "🧏 청각장애인 (수어)"
-                    : "🙋 담당자 (텍스트/음성)"}
-                </Text>
-                <Text style={styles.bubbleText}>{msg.text}</Text>
-                <Text style={styles.bubbleTime}>{msg.time}</Text>
+                {msg.type === "sign" && (
+                  <View style={st.avatar}>
+                    <Text style={st.avatarEmoji}>🧏</Text>
+                  </View>
+                )}
+                <View style={st.bubbleWrap}>
+                  <Text style={st.msgName}>
+                    {msg.type === "sign" ? "장애인 (수어)" : "담당자"}
+                  </Text>
+                  <View
+                    style={[
+                      st.bubble,
+                      msg.type === "voice" ? st.bubbleVoice : st.bubbleSign,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        st.bubbleTxt,
+                        msg.type === "voice"
+                          ? st.bubbleTxtVoice
+                          : st.bubbleTxtSign,
+                      ]}
+                    >
+                      {msg.text}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      st.msgTime,
+                      msg.type === "voice" && { textAlign: "right" },
+                    ]}
+                  >
+                    {msg.time}
+                  </Text>
+                </View>
+                {msg.type === "voice" && (
+                  <View style={st.avatar}>
+                    <Text style={st.avatarEmoji}>🙋</Text>
+                  </View>
+                )}
+                <View style={st.msgIdx}>
+                  <Text style={st.msgIdxTxt}>#{idx + 1}</Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* 영상 목록 — 웹의 어두운 패널 스타일 */}
+        {videos.length > 0 && (
+          <View style={st.videosPanel}>
+            <View style={st.videosPanelHd}>
+              <Text style={st.videosPanelHdTxt}>🎬 녹화 영상</Text>
+              <View style={st.videosCountBadge}>
+                <Text style={st.videosCountTxt}>{videos.length}개</Text>
               </View>
             </View>
-          ))}
-        </View>
+            {videos.map((vid, idx) => (
+              <View key={vid.id} style={st.videoCard}>
+                <View style={st.videoCardTop}>
+                  <Text style={st.videoCardLabel}>영상 {idx + 1}</Text>
+                  <View
+                    style={[
+                      st.videoStatusBadge,
+                      vid.uploadStatus === "done"
+                        ? st.statusDone
+                        : vid.uploadStatus === "uploading"
+                          ? st.statusUploading
+                          : st.statusErr,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        st.videoStatusTxt,
+                        vid.uploadStatus === "done"
+                          ? st.statusDoneTxt
+                          : vid.uploadStatus === "uploading"
+                            ? st.statusUploadingTxt
+                            : st.statusErrTxt,
+                      ]}
+                    >
+                      {vid.uploadStatus === "uploading" && "⏳ 저장 중"}
+                      {vid.uploadStatus === "done" && "✅ 저장됨"}
+                      {vid.uploadStatus === "error" && "⚠️ 실패"}
+                    </Text>
+                  </View>
+                </View>
+                <View style={st.videoThumb}>
+                  <Text style={{ fontSize: 28 }}>🎬</Text>
+                  <Text style={st.videoThumbTxt}>
+                    {vid.uploadStatus === "done"
+                      ? `서버 ID: ${vid.serverId}`
+                      : "준비 중..."}
+                  </Text>
+                </View>
+                <View style={st.videoCardActions}>
+                  <TouchableOpacity
+                    style={st.btnVidPlay}
+                    onPress={() => setModalVideo(vid)}
+                  >
+                    <Text style={st.btnVidPlayTxt}>▶ 크게 보기</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* 하단 공유 버튼 */}
+        {messages.length > 4 && (
+          <View style={st.footer}>
+            <TouchableOpacity style={st.btnShare} onPress={handleShare}>
+              <Text style={st.btnShareTxt}>💾 텍스트 내보내기</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
-      {/* ── 모바일 간이 비디오 모달 플레이어 ── */}
+      {/* 영상 모달 */}
       <Modal visible={modalVideo !== null} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.videoModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>🎬 영상 플레이어</Text>
+        <View style={st.modalOverlay}>
+          <View style={st.videoModal}>
+            <View style={st.modalHd}>
+              <Text style={st.modalTitle}>🎬 영상 확인</Text>
               <TouchableOpacity onPress={() => setModalVideo(null)}>
-                <Text style={styles.modalCloseBtn}>✕</Text>
+                <Text style={st.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.modalBody}>
-              <Text style={styles.modalPlayHint}>
-                {`선택된 영상 경로:\n${modalVideo?.localUrl}`}
-              </Text>
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 13,
-                  textAlign: "center",
-                  marginTop: 10,
-                }}
-              >
-                (React Native 환경에서는 expo-av 패ild나 react-native-video
-                패키지를 연동하여 이 영역에서 실제 비디오를 재생할 수 있습니다.)
+            <View style={st.modalBody}>
+              <Text style={st.modalHint}>
+                {`파일 경로:\n${modalVideo?.localUrl}`}
               </Text>
             </View>
-            <View style={styles.modalFooter}>
-              <Text style={styles.modalFooterTxt}>
-                서버 동기화 ID:{" "}
-                {modalVideo?.serverId || "없음 (로컬 임시 파일)"}
-              </Text>
-            </View>
+            {modalVideo?.serverId && (
+              <View style={st.modalFt}>
+                <Text style={st.modalFtTxt}>
+                  ✅ 서버 저장 완료 (ID: {modalVideo.serverId})
+                </Text>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -421,12 +437,9 @@ export default function ConversationPage({
   );
 }
 
-// ─── 스타일 시트 정의 ─────────────────────────────────────────
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: CP.bg,
-  },
+const st = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.bg },
+
   toast: {
     position: "absolute",
     top: 50,
@@ -436,10 +449,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     zIndex: 9999,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
     elevation: 6,
   },
   toastOk: {
@@ -455,116 +464,103 @@ const styles = StyleSheet.create({
   toastOkTxt: { color: "#065f46", fontWeight: "700", fontSize: 13 },
   toastErrTxt: { color: "#991b1b", fontWeight: "700", fontSize: 13 },
 
+  // 헤더
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: CP.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: C.surface,
     borderBottomWidth: 1,
-    borderBottomColor: CP.border,
+    borderBottomColor: C.border,
+    gap: 8,
   },
-  btnBack: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: CP.signBorder,
-    borderRadius: 8,
-    backgroundColor: CP.signBg,
+  headerLeft: { gap: 4, minWidth: 70 },
+  headerCenter: { flex: 1, alignItems: "center", gap: 2 },
+  headerTitle: { fontSize: 16, fontWeight: "900", color: C.text },
+  headerSub: { fontSize: 11, color: C.textMute },
+  headerStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
   },
-  btnBackTxt: { fontSize: 12, fontWeight: "700", color: CP.accent },
-  headerCenter: { alignItems: "center", flex: 1, mx: 8 },
-  title: { fontSize: 17, fontWeight: "900", color: CP.text },
-  statsRow: { flexDirection: "row", gap: 6, marginTop: 4 },
-  statSign: {
-    backgroundColor: CP.signBg,
-    paddingHorizontal: 6,
+  headerStatMute: { fontSize: 11, color: C.textMute },
+  statSignBadge: {
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 10,
+    backgroundColor: C.signBg,
     borderWidth: 1,
-    borderColor: CP.signBorder,
+    borderColor: C.signBorder,
   },
-  statSignTxt: { fontSize: 10, color: CP.accent, fontWeight: "700" },
-  statVoice: {
+  statSignTxt: { fontSize: 10, color: C.accent, fontWeight: "700" },
+  statVoiceBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
     backgroundColor: "#f3f0ff",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#ddd8ff",
   },
-  statVoiceTxt: { fontSize: 10, color: CP.voiceFrom, fontWeight: "700" },
+  statVoiceTxt: { fontSize: 10, color: "#6c5ce7", fontWeight: "700" },
+  statVideoBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "#1a1a26",
+    borderWidth: 1,
+    borderColor: "#2a2a38",
+  },
+  statVideoTxt: { fontSize: 10, color: "#93c5fd", fontWeight: "700" },
   btnRegister: {
-    backgroundColor: CP.accent,
-    paddingVertical: 7,
+    backgroundColor: C.accent,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
   },
   btnRegisterTxt: { color: "#fff", fontSize: 12, fontWeight: "800" },
 
-  scrollBody: { padding: 14, gap: 14 },
+  // 저장 배지
+  saveBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  saveBadgeSaving: { backgroundColor: "#fffbeb", borderColor: "#fcd34d" },
+  saveBadgeSavingTxt: { color: "#92400e", fontSize: 10, fontWeight: "700" },
+  saveBadgeDone: { backgroundColor: "#d1fae5", borderColor: "#6ee7b7" },
+  saveBadgeDoneTxt: { color: "#065f46", fontSize: 10, fontWeight: "700" },
+  saveBadgeErr: { backgroundColor: "#fee2e2", borderColor: "#fca5a5" },
+  saveBadgeErrTxt: { color: "#991b1b", fontSize: 10, fontWeight: "700" },
 
   loginWarn: {
     backgroundColor: "#fffbeb",
-    borderWidth: 1,
+    borderBottomWidth: 1,
     borderColor: "#fcd34d",
-    padding: 12,
-    borderRadius: 10,
-  },
-  loginWarnTxt: {
-    fontSize: 12,
-    color: "#92400e",
-    fontWeight: "600",
-    textAlign: "center",
-  },
-
-  saveStatusCard: {
-    backgroundColor: CP.surface,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: CP.border,
-    flexDirection: "row",
-    justifyContent: "space-between",
+    padding: 10,
     alignItems: "center",
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: CP.text,
-    marginBottom: 4,
-  },
+  loginWarnTxt: { fontSize: 12, color: "#92400e", fontWeight: "600" },
 
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  badgeSaving: { backgroundColor: "#fffbeb", borderColor: "#fcd34d" },
-  badgeSavingTxt: { color: "#92400e", fontSize: 11, fontWeight: "700" },
-  badgeDone: { backgroundColor: "#d1fae5", borderColor: "#6ee7b7" },
-  badgeDoneTxt: { color: "#065f46", fontSize: 11, fontWeight: "700" },
-  badgeErr: { backgroundColor: "#fee2e2", borderColor: "#fca5a5" },
-  badgeErrTxt: { color: "#991b1b", fontSize: 11, fontWeight: "700" },
+  scrollBody: { padding: 14, gap: 14, paddingBottom: 40 },
 
+  // 메타 카드
   metaCard: {
-    backgroundColor: CP.surface,
-    borderRadius: 12,
-    padding: 14,
+    backgroundColor: C.surface,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: CP.border,
+    borderColor: C.border,
+    padding: 14,
+    gap: 8,
   },
-  metaTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: CP.text,
-    marginBottom: 8,
-  },
-  metaText: { fontSize: 13, color: CP.textDim, marginBottom: 4 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  metaIcon: { fontSize: 14, width: 20 },
+  metaLabel: { fontSize: 12, color: C.textMute, fontWeight: "600", width: 48 },
+  metaValue: { fontSize: 13, color: C.text, fontWeight: "700", flex: 1 },
   btnShare: {
-    marginTop: 10,
+    marginTop: 6,
     backgroundColor: "#f1f5f9",
     paddingVertical: 10,
     borderRadius: 8,
@@ -574,72 +570,46 @@ const styles = StyleSheet.create({
   },
   btnShareTxt: { fontSize: 12, color: "#334155", fontWeight: "700" },
 
-  videoSectionCard: {
-    backgroundColor: CP.surface,
-    borderRadius: 12,
+  // 대화 카드
+  chatCard: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
     padding: 14,
-    borderWidth: 1,
-    borderColor: CP.border,
+    gap: 12,
   },
-  emptyText: {
-    color: CP.textMute,
-    fontSize: 12,
-    textAlign: "center",
-    paddingVertical: 16,
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: C.text,
+    marginBottom: 4,
   },
-  videoGrid: { gap: 10, marginTop: 8 },
-  videoCard: {
+  emptyBox: { alignItems: "center", gap: 10, paddingVertical: 24 },
+  emptyTxt: { fontSize: 13, color: C.textMute },
+
+  // 메시지
+  msgRow: {
     flexDirection: "row",
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: CP.border,
-    borderRadius: 10,
-    padding: 10,
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: 8,
+    marginBottom: 4,
   },
-  videoThumbnailPlaceholder: {
-    width: 70,
-    height: 60,
-    backgroundColor: "#e2e8f0",
-    borderRadius: 6,
+  msgRowLeft: { justifyContent: "flex-start" },
+  msgRowRight: { justifyContent: "flex-end" },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#f1f5f9",
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
-  videoThumbTxt: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: CP.textDim,
-    marginTop: 2,
-  },
-  videoCardBody: {
-    flex: 1,
-    paddingLeft: 12,
-    justifyContent: "space-between",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  videoStatusTxt: { fontSize: 11, color: CP.textDim, lineHeight: 15 },
-  btnPlayVid: {
-    backgroundColor: "rgba(91,69,224,0.1)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "rgba(91,69,224,0.2)",
-  },
-  btnPlayVidTxt: { color: CP.accent, fontSize: 11, fontWeight: "700" },
-
-  chatLogCard: {
-    backgroundColor: CP.surface,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: CP.border,
-  },
-  chatRow: { flexDirection: "row", marginBottom: 12 },
-  chatRowLeft: { justifyContent: "flex-start" },
-  chatRowRight: { justifyContent: "flex-end" },
-  bubble: { maxWidth: "85%", padding: 10, borderRadius: 12 },
+  avatarEmoji: { fontSize: 16 },
+  bubbleWrap: { flex: 1, gap: 3, maxWidth: "78%" },
+  msgName: { fontSize: 10, fontWeight: "700", color: C.textMute },
+  bubble: { borderRadius: 14, padding: 10 },
   bubbleSign: {
     backgroundColor: "#eff6ff",
     borderBottomLeftRadius: 2,
@@ -647,53 +617,135 @@ const styles = StyleSheet.create({
     borderColor: "rgba(37,99,235,0.1)",
   },
   bubbleVoice: {
-    backgroundColor: "#f0fdf4",
+    backgroundColor: C.voiceBg,
     borderBottomRightRadius: 2,
     borderWidth: 1,
-    borderColor: "rgba(5,150,105,0.1)",
+    borderColor: C.voiceBorder,
   },
-  bubbleSpeaker: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: CP.textDim,
-    marginBottom: 4,
-  },
-  bubbleText: { fontSize: 13, color: CP.text, lineHeight: 18 },
-  bubbleTime: {
-    fontSize: 9,
-    color: CP.textMute,
-    textAlign: "right",
-    marginTop: 4,
-  },
+  bubbleTxt: { fontSize: 13, lineHeight: 20 },
+  bubbleTxtSign: { color: "#1e3a5f" },
+  bubbleTxtVoice: { color: "#14532d" },
+  msgTime: { fontSize: 9, color: C.textMute },
+  msgIdx: { minWidth: 24, alignItems: "center", paddingTop: 22 },
+  msgIdxTxt: { fontSize: 9, color: C.textMute },
 
+  // 영상 패널 — 웹의 어두운 배경 스타일
+  videosPanel: {
+    backgroundColor: C.dark,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.darkBorder,
+    overflow: "hidden",
+  },
+  videosPanelHd: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 13,
+    backgroundColor: C.darkSurface,
+    borderBottomWidth: 1,
+    borderBottomColor: C.darkBorder,
+  },
+  videosPanelHdTxt: { fontSize: 13, fontWeight: "800", color: "#c0c0e0" },
+  videosCountBadge: {
+    backgroundColor: "rgba(37,99,235,0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(37,99,235,0.3)",
+  },
+  videosCountTxt: { fontSize: 11, color: "#93c5fd", fontWeight: "700" },
+  videoCard: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#1e1e2a",
+    gap: 8,
+  },
+  videoCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  videoCardLabel: { fontSize: 11, fontWeight: "700", color: "#6060a0" },
+  videoStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  videoStatusTxt: { fontSize: 10, fontWeight: "700" },
+  statusDone: {
+    backgroundColor: "rgba(0,184,148,0.15)",
+    borderColor: "rgba(0,184,148,0.3)",
+  },
+  statusDoneTxt: { color: "#00b894" },
+  statusUploading: {
+    backgroundColor: "rgba(240,165,0,0.15)",
+    borderColor: "rgba(240,165,0,0.3)",
+  },
+  statusUploadingTxt: { color: "#f0a500" },
+  statusErr: {
+    backgroundColor: "rgba(229,83,83,0.15)",
+    borderColor: "rgba(229,83,83,0.3)",
+  },
+  statusErrTxt: { color: "#e55353" },
+  videoThumb: {
+    height: 80,
+    backgroundColor: "#0a0a12",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: C.darkBorder,
+  },
+  videoThumbTxt: { fontSize: 10, color: "#404058" },
+  videoCardActions: { flexDirection: "row", gap: 6 },
+  btnVidPlay: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "rgba(37,99,235,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(37,99,235,0.28)",
+    alignItems: "center",
+  },
+  btnVidPlayTxt: { color: "#93c5fd", fontSize: 12, fontWeight: "700" },
+
+  footer: { gap: 8 },
+
+  // 모달
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
+    backgroundColor: "rgba(8,8,16,0.88)",
     justifyContent: "center",
     padding: 20,
   },
-  videoModal: { backgroundColor: "#1e293b", borderRadius: 16, padding: 16 },
-  modalHeader: {
+  videoModal: {
+    backgroundColor: "#16161e",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.darkBorder,
+  },
+  modalHd: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
-  },
-  modalTitle: { color: "#fff", fontSize: 15, fontWeight: "800" },
-  modalCloseBtn: { color: "#fff", fontSize: 20, paddingHorizontal: 6 },
-  modalBody: {
-    backgroundColor: "#0f172a",
-    height: 200,
-    borderRadius: 10,
-    justifyContent: "center",
     padding: 14,
+    backgroundColor: "#1e1e2a",
+    borderBottomWidth: 1,
+    borderBottomColor: C.darkBorder,
   },
-  modalPlayHint: {
-    color: "#38bdf8",
-    fontSize: 12,
-    textAlign: "center",
-    fontFamily: 'Platform.OS === "ios" ? "Courier" : "monospace"',
+  modalTitle: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  modalClose: { color: "#888", fontSize: 20, paddingHorizontal: 4 },
+  modalBody: {
+    backgroundColor: "#0a0a10",
+    minHeight: 140,
+    justifyContent: "center",
+    padding: 16,
   },
-  modalFooter: { marginTop: 10, alignItems: "center" },
-  modalFooterTxt: { color: "#94a3b8", fontSize: 11 },
+  modalHint: { color: "#38bdf8", fontSize: 12, textAlign: "center" },
+  modalFt: { padding: 10, alignItems: "center" },
+  modalFtTxt: { color: "#00b894", fontSize: 11, fontWeight: "700" },
 });

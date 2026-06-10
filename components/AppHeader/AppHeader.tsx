@@ -1,16 +1,10 @@
 // ══════════════════════════════════════════════════════════════
-//  AppHeader.tsx — 다크 테마 + 하단 border radius
+//  AppHeader.tsx — 검색바 포커스 시 /search 페이지로 이동
 // ══════════════════════════════════════════════════════════════
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import {
-  Image,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import LoginScreen from "../Login/LoginScreen";
 import SignupScreen from "../SignUp/SignupScreen";
 
@@ -20,8 +14,8 @@ const C = {
   text: "#1a1a2e",
   sub: "#666",
   border: "#e0dff8",
-  bg: "#f5f3ff", // ← 연보라 밝은 배경
-  surface: "#ece9ff", // ← 서피스
+  bg: "#f5f3ff",
+  surface: "#ece9ff",
   red: "#ef4444",
 };
 
@@ -57,9 +51,8 @@ export default function AppHeader({
   onMyPage,
   onLogoPress,
 }: AppHeaderProps) {
+  const router = useRouter();
   const [signedUpName, setSignedUpName] = useState("");
-  const [searchText, setSearchText] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [authModal, setAuthModal] = useState<"login" | "signup" | null>(null);
 
@@ -67,13 +60,14 @@ export default function AppHeader({
   const navLabel =
     displayName.length > 5 ? displayName.slice(0, 5) + "…" : displayName;
 
-  const handleSearch = () => {
-    if (onSearchSubmit && searchText.trim()) onSearchSubmit(searchText.trim());
-  };
-
   const handleLoginSuccess = (name: string, orgType: string, email: string) => {
     setAuthModal(null);
     onLogin?.(name, orgType, email);
+  };
+
+  // 검색바 터치 → /search 페이지로 이동
+  const handleSearchPress = () => {
+    router.navigate("/search" as any);
   };
 
   return (
@@ -151,36 +145,20 @@ export default function AppHeader({
 
         {/* ─── 2행 ─── */}
         <View style={s.row2}>
-          <View style={[s.search, searchFocused && s.searchFoc]}>
+          {/* 검색바 — 터치하면 /search 로 이동 (입력 불가 더미) */}
+          <TouchableOpacity
+            style={s.search}
+            onPress={handleSearchPress}
+            activeOpacity={0.85}
+          >
             <Ionicons
               name="search"
               size={15}
-              color={searchFocused ? C.accent : "#bbb"}
+              color="#bbb"
               style={s.searchLeadIcon}
             />
-            <TextInput
-              style={s.searchInp}
-              placeholder="수어 단어를 검색하세요..."
-              placeholderTextColor="#aaa"
-              value={searchText}
-              onChangeText={setSearchText}
-              onSubmitEditing={handleSearch}
-              returnKeyType="search"
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-            />
-            {searchText.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setSearchText("")}
-                style={s.searchClearBtn}
-              >
-                <Ionicons name="close-circle" size={15} color="#bbb" />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={handleSearch} style={s.searchBtn}>
-              <Text style={s.searchBtnTxt}>검색</Text>
-            </TouchableOpacity>
-          </View>
+            <Text style={s.searchPlaceholder}>수어 단어를 검색하세요...</Text>
+          </TouchableOpacity>
 
           <View>
             <TouchableOpacity
@@ -222,10 +200,9 @@ export default function AppHeader({
 }
 
 const s = StyleSheet.create({
-  // ── 헤더 래퍼 ──────────────────────────────────────────────
   wrapper: {
     backgroundColor: C.bg,
-    borderBottomLeftRadius: 24, // 하단만 둥글게
+    borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     borderBottomWidth: 1.5,
     borderLeftWidth: 1.5,
@@ -239,14 +216,11 @@ const s = StyleSheet.create({
     zIndex: 200,
     overflow: "hidden",
   },
-
-  // 상단 보라 포인트 라인
   accentLine: {
     height: 2,
     backgroundColor: C.accent,
     opacity: 0.8,
   },
-
   row1: {
     height: ROW1_H,
     flexDirection: "row",
@@ -263,8 +237,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 8,
   },
-
-  // 로고
   logo: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
   logoImage: { width: 38, height: 38, borderRadius: 10 },
   logoTxt: {
@@ -273,7 +245,6 @@ const s = StyleSheet.create({
     color: C.accent,
     letterSpacing: -0.3,
   },
-
   actions: {
     flexDirection: "row",
     alignItems: "center",
@@ -286,8 +257,6 @@ const s = StyleSheet.create({
     gap: 6,
     flexShrink: 0,
   },
-
-  // 로그인 상태
   myBtn: {
     paddingHorizontal: 10,
     paddingVertical: 7,
@@ -317,8 +286,6 @@ const s = StyleSheet.create({
     backgroundColor: "#fff1f1",
   },
   logoutTxt: { fontSize: 12, fontWeight: "700", color: "#ef4444" },
-
-  // 비로그인 상태
   loginBtn: {
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -335,8 +302,6 @@ const s = StyleSheet.create({
     backgroundColor: C.accent,
   },
   signupTxt: { fontSize: 12, fontWeight: "700", color: "#fff" },
-
-  // 알림
   icoBtn: {
     width: 36,
     height: 36,
@@ -367,7 +332,7 @@ const s = StyleSheet.create({
   },
   badgeTxt: { color: "#fff", fontSize: 9, fontWeight: "700" },
 
-  // 검색
+  // 검색바 — 터치 전용 (더미)
   search: {
     flexDirection: "row",
     alignItems: "center",
@@ -377,24 +342,13 @@ const s = StyleSheet.create({
     borderRadius: 10,
     overflow: "hidden",
     flex: 1,
-  },
-  searchFoc: { borderColor: C.accent },
-  searchLeadIcon: { paddingLeft: 10 },
-  searchInp: {
-    flex: 1,
     paddingVertical: 7,
+  },
+  searchLeadIcon: { paddingLeft: 10 },
+  searchPlaceholder: {
+    flex: 1,
     paddingLeft: 8,
-    paddingRight: 4,
     fontSize: 13,
-    color: "#1a1a2e",
+    color: "#aaa",
   },
-  searchClearBtn: { paddingHorizontal: 6, paddingVertical: 8 },
-  searchBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: C.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  searchBtnTxt: { fontSize: 12, fontWeight: "700", color: "#fff" },
 });

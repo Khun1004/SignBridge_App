@@ -51,7 +51,8 @@
           "iosUrlScheme": "com.googleusercontent.apps.411621867441-3odehtirdhspmln5thidil6ns37flcp4"
         }
       ],
-      "@react-native-voice/voice"
+      "@react-native-voice/voice",
+      "expo-speech-recognition"
     ],
     "experiments": {
       "typedRoutes": true,
