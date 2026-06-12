@@ -2,6 +2,7 @@
 //  components/Community/CommunityPersonalDetail.tsx
 //  웹 CommunityPersonalDetail.jsx → React Native 변환
 // ══════════════════════════════════════════════════════════════
+import { BASE_URL } from "@/components/api/api";
 import React from "react";
 import {
   Alert,
@@ -24,6 +25,7 @@ const C = {
 };
 
 const CONTACT_LABEL: Record<string, string> = {
+  signbridge: "💬 SignBridge 채팅",
   chat: "💬 오픈채팅",
   phone: "📞 전화번호",
   email: "📧 이메일",
@@ -32,6 +34,7 @@ const CONTACT_LABEL: Record<string, string> = {
 export interface CommunityMemberItem {
   id?: number;
   name: string;
+  chatId?: string;
   role: string;
   region: string;
   intro?: string;
@@ -51,7 +54,7 @@ interface Props {
   onBack: () => void;
   myEmail?: string;
   myName?: string;
-  onChat?: (roomId: string, name: string) => void;
+  onChat?: (room: any) => void;
   onEdit?: (member: CommunityMemberItem) => void;
 }
 
@@ -69,12 +72,9 @@ export default function CommunityPersonalDetail({
   const contactValue = member.contactValue || member.contact?.value || "";
   const avatarText = member.avatar || member.name?.charAt(0) || "?";
 
+  // 외부 연락 (전화/이메일/오픈채팅)
   const handleContact = () => {
-    if (contactType === "chat") {
-      Linking.openURL(contactValue).catch(() =>
-        Alert.alert("오류", "링크를 열 수 없습니다."),
-      );
-    } else if (contactType === "phone") {
+    if (contactType === "phone") {
       Linking.openURL(`tel:${contactValue}`).catch(() =>
         Alert.alert("오류", "전화를 걸 수 없습니다."),
       );
@@ -82,27 +82,39 @@ export default function CommunityPersonalDetail({
       Linking.openURL(`mailto:${contactValue}`).catch(() =>
         Alert.alert("오류", "이메일을 열 수 없습니다."),
       );
+    } else if (contactType === "chat") {
+      Linking.openURL(contactValue).catch(() =>
+        Alert.alert("오류", "링크를 열 수 없습니다."),
+      );
     }
   };
 
-  const handleChat = async () => {
+  // SignBridge 채팅방 생성
+  const handleStartChat = async () => {
     try {
-      const res = await fetch("/api/chat/rooms", {
+      const res = await fetch(`${BASE_URL}/chat/rooms/direct`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userA: myEmail,
-          userAName: myName,
-          userB: member.userEmail || member.name,
-          userBName: member.name,
+          emailA: myEmail,
+          nameA: myName,
+          emailB: member.userEmail,
+          nameB: member.name,
         }),
       });
+      if (!res.ok) throw new Error("서버 오류");
       const room = await res.json();
-      onChat?.(room.roomId, member.name);
+      onChat?.(room);
     } catch {
-      Alert.alert("오류", "채팅방을 만들 수 없습니다.");
+      Alert.alert("오류", "채팅방을 만들 수 없습니다. 다시 시도해 주세요.");
     }
   };
+
+  const canChat =
+    !!myEmail && !!member.userEmail && myEmail !== member.userEmail;
+  // signbridge가 아닌 외부 연락처 타입인 경우에만 버튼 표시
+  const hasExternalContact =
+    !!contactValue && !!contactType && contactType !== "signbridge";
 
   const specialities = member.speciality
     ? member.speciality
@@ -125,6 +137,12 @@ export default function CommunityPersonalDetail({
         <View style={{ flex: 1 }}>
           <Text style={st.name}>{member.name}</Text>
           <View style={st.badges}>
+            {/* chatId 배지 — 웹과 동일하게 추가 */}
+            {!!member.chatId && (
+              <View style={st.chatIdBadge}>
+                <Text style={st.chatIdBadgeTxt}>@{member.chatId}</Text>
+              </View>
+            )}
             <View style={st.roleBadge}>
               <Text style={st.roleBadgeTxt}>{member.role}</Text>
             </View>
@@ -139,6 +157,33 @@ export default function CommunityPersonalDetail({
           </View>
         </View>
       </View>
+
+      {/* ── 액션 버튼 행 — 채팅 + 외부연락 나란히 (웹 cpd-action-row) ── */}
+      {canChat && (
+        <View style={st.actionRow}>
+          <TouchableOpacity
+            style={st.chatBtn}
+            onPress={handleStartChat}
+            activeOpacity={0.85}
+          >
+            <Text style={st.chatBtnTxt}>💬 채팅하기</Text>
+          </TouchableOpacity>
+          {hasExternalContact && (
+            <TouchableOpacity
+              style={st.contactBtnInline}
+              onPress={handleContact}
+              activeOpacity={0.85}
+            >
+              <Text style={st.contactBtnInlineTxt}>
+                {contactType === "phone" ? "📞 전화하기" : "📧 이메일 보내기"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      {!myEmail && (
+        <Text style={st.loginHint}>채팅을 시작하려면 로그인이 필요합니다.</Text>
+      )}
 
       {/* 자기소개 */}
       <View style={st.section}>
@@ -183,19 +228,8 @@ export default function CommunityPersonalDetail({
         </View>
       )}
 
-      {/* 채팅하기 버튼 */}
-      {!!myEmail && myEmail !== member.userEmail && (
-        <TouchableOpacity
-          style={st.chatBtn}
-          onPress={handleChat}
-          activeOpacity={0.85}
-        >
-          <Text style={st.chatBtnTxt}>💬 {member.name}님과 채팅하기</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* 연락 방법 */}
-      {!!contactValue && (
+      {/* 연락 방법 — signbridge가 아닌 외부 연락처만 표시 */}
+      {hasExternalContact && (
         <View style={st.section}>
           <Text style={st.sectionTitle}>📞 연락 방법</Text>
           <View style={st.contactBox}>
@@ -204,19 +238,18 @@ export default function CommunityPersonalDetail({
             </Text>
             <Text style={st.contactVal}>{contactValue}</Text>
           </View>
-          <TouchableOpacity
-            style={st.contactBtn}
-            onPress={handleContact}
-            activeOpacity={0.85}
-          >
-            <Text style={st.contactBtnTxt}>
-              {contactType === "chat"
-                ? "💬 채팅하기"
-                : contactType === "phone"
-                  ? "📞 전화하기"
-                  : "📧 이메일 보내기"}
-            </Text>
-          </TouchableOpacity>
+          {/* 로그인 안 된 경우에만 독립 버튼 표시 */}
+          {!canChat && (
+            <TouchableOpacity
+              style={st.contactBtnStandalone}
+              onPress={handleContact}
+              activeOpacity={0.85}
+            >
+              <Text style={st.contactBtnStandaloneTxt}>
+                {contactType === "phone" ? "📞 전화하기" : "📧 이메일 보내기"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -238,16 +271,8 @@ export default function CommunityPersonalDetail({
 
 const st = StyleSheet.create({
   page: { flex: 1, backgroundColor: C.white, padding: 20 },
-  backBtn: {
-    alignSelf: "flex-start",
-    borderWidth: 1.5,
-    borderColor: C.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginBottom: 20,
-  },
-  backBtnTxt: { fontSize: 13, fontWeight: "600", color: C.sub },
+
+  // 프로필 헤더
   hero: {
     flexDirection: "row",
     alignItems: "center",
@@ -271,6 +296,16 @@ const st = StyleSheet.create({
   avatarTxt: { color: C.white, fontSize: 28, fontWeight: "800" },
   name: { fontSize: 22, fontWeight: "800", color: C.text, marginBottom: 8 },
   badges: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+
+  // chatId 배지 (보라색) — 웹 cpd-chatid-badge
+  chatIdBadge: {
+    backgroundColor: "#ede9fe",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  chatIdBadgeTxt: { fontSize: 12, fontWeight: "700", color: "#7c3aed" },
+
   roleBadge: {
     backgroundColor: C.accentBg,
     borderRadius: 20,
@@ -292,6 +327,40 @@ const st = StyleSheet.create({
     paddingVertical: 3,
   },
   privateBadgeTxt: { fontSize: 12, color: "#9ca3af" },
+
+  // ── 액션 버튼 행 (채팅 + 외부연락 나란히) ──
+  actionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+  },
+  chatBtn: {
+    flex: 1,
+    backgroundColor: C.accent,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+  },
+  chatBtnTxt: { color: C.white, fontSize: 15, fontWeight: "700" },
+  contactBtnInline: {
+    flex: 1,
+    backgroundColor: C.white,
+    borderWidth: 1.5,
+    borderColor: C.accent,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+  },
+  contactBtnInlineTxt: { color: C.accent, fontSize: 15, fontWeight: "700" },
+
+  loginHint: {
+    textAlign: "center",
+    fontSize: 13,
+    color: "#9ca3af",
+    marginBottom: 16,
+  },
+
+  // 섹션
   section: {
     backgroundColor: C.white,
     borderWidth: 1.5,
@@ -307,6 +376,8 @@ const st = StyleSheet.create({
     marginBottom: 10,
   },
   text: { fontSize: 14, color: "#374151", lineHeight: 22 },
+
+  // 전문 분야 칩
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   chip: {
     backgroundColor: "#f0fdf4",
@@ -317,6 +388,8 @@ const st = StyleSheet.create({
     paddingVertical: 4,
   },
   chipTxt: { fontSize: 12, fontWeight: "600", color: "#059669" },
+
+  // 자격증
   certItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -327,14 +400,8 @@ const st = StyleSheet.create({
     marginTop: 6,
   },
   certName: { fontSize: 13, fontWeight: "600", color: "#374151" },
-  chatBtn: {
-    backgroundColor: C.accent,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  chatBtnTxt: { color: C.white, fontSize: 15, fontWeight: "700" },
+
+  // 연락 방법
   contactBox: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -346,13 +413,17 @@ const st = StyleSheet.create({
   },
   contactLabel: { fontSize: 13, color: "#374151" },
   contactVal: { fontSize: 13, fontWeight: "700", color: "#4338ca" },
-  contactBtn: {
+
+  // 로그인 안 된 경우 독립 연락 버튼
+  contactBtnStandalone: {
     backgroundColor: C.accent,
     borderRadius: 12,
     padding: 14,
     alignItems: "center",
   },
-  contactBtnTxt: { color: C.white, fontSize: 15, fontWeight: "700" },
+  contactBtnStandaloneTxt: { color: C.white, fontSize: 15, fontWeight: "700" },
+
+  // 수정 버튼
   editBtn: {
     borderWidth: 1.5,
     borderColor: C.accent,

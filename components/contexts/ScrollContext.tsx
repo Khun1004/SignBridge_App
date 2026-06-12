@@ -6,16 +6,17 @@ interface ScrollContextType {
   registerScroll: (ref: ScrollView | null) => void;
   scrollUp: () => void;
   scrollDown: () => void;
+  updateY: (y: number) => void;
 }
 
 const ScrollContext = createContext<ScrollContextType>({
   registerScroll: () => {},
   scrollUp: () => {},
   scrollDown: () => {},
+  updateY: () => {},
 });
 
 export function ScrollProvider({ children }: { children: React.ReactNode }) {
-  // ScrollView 인스턴스를 직접 보관
   const scrollViewRef = useRef<ScrollView | null>(null);
   const currentY = useRef(0);
   const STEP = 300;
@@ -23,6 +24,10 @@ export function ScrollProvider({ children }: { children: React.ReactNode }) {
   const registerScroll = (ref: ScrollView | null) => {
     scrollViewRef.current = ref;
     currentY.current = 0;
+  };
+
+  const updateY = (y: number) => {
+    currentY.current = y;
   };
 
   const scrollUp = () => {
@@ -40,7 +45,9 @@ export function ScrollProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ScrollContext.Provider value={{ registerScroll, scrollUp, scrollDown }}>
+    <ScrollContext.Provider
+      value={{ registerScroll, scrollUp, scrollDown, updateY }}
+    >
       {children}
     </ScrollContext.Provider>
   );

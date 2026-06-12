@@ -32,10 +32,14 @@ export default function RegistrationCommunityScreen() {
     }
   }, [params.memberData]);
 
+  // 수정 시 기존 chatId — 잠금 처리용
+  const existingChatId = isEdit ? (initialData?.chatId ?? "") : "";
+
   const handleSubmit = async (form: RegistrationForm) => {
     try {
       const body = {
         name: form.name || displayName || "",
+        chatId: form.chatId || undefined,
         userEmail: userEmail || "",
         role: form.role,
         region: form.region,
@@ -43,7 +47,9 @@ export default function RegistrationCommunityScreen() {
         experience: form.experience,
         speciality: form.speciality,
         contactType: form.contactType,
-        contactValue: form.contactValue,
+        // signbridge 타입은 contactValue 빈 문자열로
+        contactValue:
+          form.contactType === "signbridge" ? "" : form.contactValue,
         publicProfile: form.publicProfile,
         certFileNames: form.certFiles.map((f) => f.name),
       };
@@ -62,6 +68,7 @@ export default function RegistrationCommunityScreen() {
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
       <RegistrationCommunityPage
         defaultName={displayName}
+        existingChatId={existingChatId}
         initialData={initialData}
         isEdit={isEdit}
         onBack={() => router.back()}

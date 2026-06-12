@@ -3,18 +3,10 @@
 //  웹의 api.jsx와 동일한 구조 (React Native 환경 대응)
 // ══════════════════════════════════════════════════════════════
 
-// ── 서버 주소 설정 ─────────────────────────────────────────────
-// 개발 환경에 맞게 변경하세요:
-// - iOS 시뮬레이터:  http://localhost:8080
-// - Android 에뮬레이터: http://10.0.2.2:8080
-// - 실제 기기: http://[컴퓨터 IP]:8080  (예: http://192.168.1.100:8080)
-// ── IP 주소 한 곳에서만 관리 ──────────────────────────────────
-export const SERVER_IP = "192.168.0.80"; // ← ipconfig의 IPv4 주소만 변경하세요
-
+export const SERVER_IP = "192.168.0.109";
 export const BASE_URL = `http://${SERVER_IP}:8080/api`;
 export const LSTM_WS_URL = `ws://${SERVER_IP}:8000/ws/sign/frame`;
 
-// ── 공통 요청 함수 ─────────────────────────────────────────────
 async function request<T = any>(
   path: string,
   options: RequestInit = {},
@@ -90,6 +82,7 @@ export interface ProfileUpdateRequest {
 export interface CommunityMember {
   id: number;
   name: string;
+  chatId?: string; // ← 추가: @아이디
   userEmail: string;
   role: string;
   region: string;
@@ -107,6 +100,7 @@ export interface CommunityMember {
 
 export interface CommunityMemberRequest {
   name: string;
+  chatId?: string; // ← 추가
   userEmail: string;
   role: string;
   region: string;
@@ -123,21 +117,16 @@ export interface CommunityMemberRequest {
 //  인증 API
 // ══════════════════════════════════════════════════════════════
 export const authApi = {
-  /** 로그인 */
   login: (data: LoginRequest) =>
     request<LoginResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-
-  /** 회원가입 */
   signup: (data: SignupRequest) =>
     request<LoginResponse>("/auth/signup", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-
-  /** Google OAuth 로그인 */
   googleLogin: (credential: string) =>
     request<LoginResponse>("/auth/google", {
       method: "POST",
@@ -149,19 +138,22 @@ export const authApi = {
 //  마이페이지 API
 // ══════════════════════════════════════════════════════════════
 export const myPageApi = {
-  /** 프로필 조회 */
   getProfile: (email: string) =>
     request<ProfileResponse>(`/mypage/profile/${encodeURIComponent(email)}`),
-
-  /** 케이스 목록 조회 */
   getCases: (email: string) =>
     request<any[]>(`/mypage/cases/${encodeURIComponent(email)}`),
-
-  /** 프로필 수정 */
   updateProfile: (email: string, data: ProfileUpdateRequest) =>
     request<ProfileResponse>(`/mypage/profile/${encodeURIComponent(email)}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+};
+
+export const aiApi = {
+  chat: (userEmail: string, messages: { role: string; content: string }[]) =>
+    request<any>("/ai/chat", {
+      method: "POST",
+      body: JSON.stringify({ userEmail, messages }),
     }),
 };
 
@@ -184,7 +176,7 @@ export const communityApi = {
     return request<CommunityMember[]>(`/community/members?${q}`);
   },
 
-  /** 내 프로필 조회 */
+  /** 내 프로필 조회 — 웹 communityApi.getMyProfile과 동일 */
   getMyProfile: (email: string) =>
     request<CommunityMember>(
       `/community/members/me?email=${encodeURIComponent(email)}`,
@@ -208,13 +200,14 @@ export const communityApi = {
       body: JSON.stringify(data),
     }),
 
-  /** 삭제 */
+  /**
+   * 삭제 — 웹 api.jsx와 동일하게 id + email 모두 전달
+   * 웹: delete: (id, email) => request(`/community/members/${id}?email=...`, DELETE)
+   */
   delete: (id: number, email: string) =>
     request<void>(
       `/community/members/${id}?email=${encodeURIComponent(email)}`,
-      {
-        method: "DELETE",
-      },
+      { method: "DELETE" },
     ),
 };
 
@@ -222,14 +215,11 @@ export const communityApi = {
 //  번역 API
 // ══════════════════════════════════════════════════════════════
 export const translateApi = {
-  /** 수어 토큰 → 자연어 문장 */
   buildSubtitle: (words: string[], place = "personal") =>
     request<{ sentence: string }>("/subtitle", {
       method: "POST",
       body: JSON.stringify({ words, place }),
     }),
-
-  /** 수어 가이드 생성 */
   getSignGuide: (text: string) =>
     request<any>("/sign-guide", {
       method: "POST",
@@ -241,18 +231,13 @@ export const translateApi = {
 //  개인 케이스 API
 // ══════════════════════════════════════════════════════════════
 export const personalApi = {
-  /** 케이스 저장 */
   saveCase: (data: any) =>
     request<any>("/personal/cases", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-
-  /** 케이스 목록 조회 */
   getCases: (email: string) =>
     request<any[]>(`/personal/cases?email=${encodeURIComponent(email)}`),
-
-  /** 케이스 삭제 */
   deleteCase: (id: number) =>
     request<void>(`/personal/cases/${id}`, { method: "DELETE" }),
 };
@@ -263,7 +248,6 @@ export const personalApi = {
 export const immigrationApi = {
   getCases: (email: string) =>
     request<any[]>(`/immigration/cases?email=${encodeURIComponent(email)}`),
-
   saveRecord: (data: any) =>
     request<any>("/immigration/cases", {
       method: "POST",
@@ -277,7 +261,6 @@ export const immigrationApi = {
 export const policeApi = {
   getCases: (email: string) =>
     request<any[]>(`/police/cases?email=${encodeURIComponent(email)}`),
-
   saveRecord: (data: any) =>
     request<any>("/police/cases", {
       method: "POST",

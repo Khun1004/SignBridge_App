@@ -2,15 +2,15 @@
 //  app/(tabs)/community.tsx
 // ══════════════════════════════════════════════════════════════
 import { communityApi, CommunityMember } from "@/components/api/api";
-import { RegistrationForm } from "@/components/Community/RegistrationCommunity";
 import { useAuth } from "@/components/contexts/AuthContext";
 import { useCommunity } from "@/components/contexts/CommunityContext";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -27,6 +27,9 @@ const C = {
   bg: "#f8f9ff",
   white: "#ffffff",
   cardBg: "#f3f4f6",
+  red: "#ef4444",
+  redBg: "#fff5f5",
+  redBorder: "#fecaca",
 };
 
 const ROLE_OPTIONS = [
@@ -50,28 +53,22 @@ const REGION_OPTIONS = [
   "기타",
 ];
 
-type ViewMode = "list" | "register" | "detail";
-
 export default function CommunityScreen() {
-  const [view, setView] = useState<ViewMode>("list");
   const [members, setMembers] = useState<CommunityMember[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<CommunityMember | null>(null);
-  const [editTarget, setEditTarget] = useState<CommunityMember | null>(null);
   const [filterRole, setFilterRole] = useState("전체");
   const [filterRegion, setFilterRegion] = useState("전체");
 
-  // ── 로그인 상태 (AuthContext에서 가져오기) ─────────────────
+  // 내 프로필 상태
+  const [myProfile, setMyProfile] = useState<CommunityMember | null>(null);
+
+  // 삭제 확인 모달
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const { loggedIn, userEmail, displayName } = useAuth();
   const { setCommunityView, setCommunityTitle } = useCommunity();
   const router = useRouter();
-
-  // ── 뷰 전환 (Context 동기화) ─────────────────────────────────
-  const changeView = (v: ViewMode, title = "") => {
-    setView(v);
-    setCommunityView(v);
-    setCommunityTitle(title);
-  };
 
   // ── 목록 로드 ───────────────────────────────────────────────
   const loadMembers = useCallback(async (role = "", region = "") => {
@@ -86,9 +83,30 @@ export default function CommunityScreen() {
     }
   }, []);
 
+  // ── 내 프로필 로드 ──────────────────────────────────────────
+  const loadMyProfile = useCallback(async () => {
+    if (!userEmail) {
+      setMyProfile(null);
+      return;
+    }
+    try {
+      const data = await communityApi.getMyProfile(userEmail);
+      setMyProfile(data ?? null);
+    } catch {
+      setMyProfile(null);
+    }
+  }, [userEmail]);
+
   useEffect(() => {
     loadMembers(filterRole, filterRegion);
   }, [filterRole, filterRegion]);
+
+  // 화면 포커스 시 내 프로필 새로고침 (등록/수정 후 돌아왔을 때 반영)
+  useFocusEffect(
+    useCallback(() => {
+      loadMyProfile();
+    }, [loadMyProfile]),
+  );
 
   // ── 등록하기 클릭 ───────────────────────────────────────────
   const handleRegisterClick = () => {
@@ -96,38 +114,37 @@ export default function CommunityScreen() {
       Alert.alert("로그인 필요", "등록하려면 먼저 로그인 해주세요.");
       return;
     }
-    router.push("/registration" as any);
+    router.push("/registrationcommunity" as any);
   };
 
-  // ── 등록/수정 완료 ──────────────────────────────────────────
-  const handleSubmit = async (form: RegistrationForm) => {
-    const body = {
-      name: form.name || displayName,
-      userEmail,
-      role: form.role,
-      region: form.region,
-      intro: form.intro,
-      experience: form.experience,
-      speciality: form.speciality,
-      contactType: form.contactType,
-      contactValue: form.contactValue,
-      publicProfile: form.publicProfile,
-      certFileNames: form.certFiles.map((f) => f.name),
-    };
+  // ── 수정하기 클릭 ───────────────────────────────────────────
+  const handleEditClick = () => {
+    if (!myProfile) return;
+    router.push({
+      pathname: "/registrationcommunity" as any,
+      params: {
+        isEdit: "true",
+        memberId: String(myProfile.id),
+        memberData: JSON.stringify(myProfile),
+      },
+    });
+  };
 
-    let saved;
-    if (editTarget?.id) {
-      saved = await communityApi.update(editTarget.id, body);
-    } else {
-      saved = await communityApi.save(body);
+  // ── 삭제 확인 ───────────────────────────────────────────────
+  const handleDeleteConfirm = async () => {
+    if (!myProfile || !userEmail) return;
+    setDeleteLoading(true);
+    try {
+      await communityApi.delete(myProfile.id, userEmail);
+      setMyProfile(null);
+      await loadMembers(filterRole, filterRegion);
+      setDeleteConfirm(false);
+    } catch {
+      Alert.alert("오류", "삭제에 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setDeleteLoading(false);
     }
-
-    await loadMembers(filterRole, filterRegion);
-    setEditTarget(null);
-    setView("list");
   };
-
-  // ── 뷰 분기 ─────────────────────────────────────────────────
 
   // ── 목록 화면 ───────────────────────────────────────────────
   return (
@@ -147,15 +164,18 @@ export default function CommunityScreen() {
             수어 선생님, 통역사, 학습자를 찾아보세요
           </Text>
         </View>
-        <TouchableOpacity
-          style={[s.registerBtn, !loggedIn && s.registerBtnDisabled]}
-          onPress={handleRegisterClick}
-          activeOpacity={loggedIn ? 0.85 : 1}
-          disabled={!loggedIn}
-        >
-          <Text style={s.registerBtnTxt}>+ 등록하기</Text>
-          {!loggedIn && <Text style={s.registerBtnHint}>🔒</Text>}
-        </TouchableOpacity>
+        {/* 프로필 없을 때만 등록 버튼 표시 */}
+        {!myProfile && (
+          <TouchableOpacity
+            style={[s.registerBtn, !loggedIn && s.registerBtnDisabled]}
+            onPress={handleRegisterClick}
+            activeOpacity={loggedIn ? 0.85 : 1}
+            disabled={!loggedIn}
+          >
+            <Text style={s.registerBtnTxt}>+ 등록하기</Text>
+            {!loggedIn && <Text style={s.registerBtnHint}>🔒</Text>}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* 로그인 안내 배너 (비로그인 시) */}
@@ -172,6 +192,83 @@ export default function CommunityScreen() {
           </Text>
         </View>
       )}
+
+      {/* ── 내 프로필 배너 (등록된 경우) ── */}
+      {myProfile && (
+        <View style={s.myProfileBanner}>
+          <View style={s.myProfileLeft}>
+            <View style={s.myProfileAvatar}>
+              <Text style={s.myProfileAvatarTxt}>
+                {myProfile.avatar || myProfile.name?.charAt(0) || "?"}
+              </Text>
+            </View>
+            <View>
+              <Text style={s.myProfileLabel}>내 커뮤니티 프로필</Text>
+              <Text style={s.myProfileName}>
+                {myProfile.name} · {myProfile.role}
+                {myProfile.chatId ? (
+                  <Text style={s.myProfileChatId}> @{myProfile.chatId}</Text>
+                ) : null}
+              </Text>
+            </View>
+          </View>
+          <View style={s.myProfileActions}>
+            <View style={s.regionBadgeSmall}>
+              <Text style={s.regionBadgeSmallTxt}>📍 {myProfile.region}</Text>
+            </View>
+            <TouchableOpacity style={s.editBtn} onPress={handleEditClick}>
+              <Text style={s.editBtnTxt}>✏️ 수정</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={s.deleteBtn}
+              onPress={() => setDeleteConfirm(true)}
+            >
+              <Text style={s.deleteBtnTxt}>🗑 삭제</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ── 삭제 확인 모달 ── */}
+      <Modal
+        visible={deleteConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteConfirm(false)}
+      >
+        <TouchableOpacity
+          style={s.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setDeleteConfirm(false)}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <View style={s.modalBox}>
+              <Text style={s.modalIcon}>🗑</Text>
+              <Text style={s.modalTitle}>프로필을 삭제할까요?</Text>
+              <Text style={s.modalDesc}>
+                삭제하면 커뮤니티 목록에서 사라지며 복구할 수 없습니다.
+              </Text>
+              <View style={s.modalBtns}>
+                <TouchableOpacity
+                  style={s.modalCancel}
+                  onPress={() => setDeleteConfirm(false)}
+                >
+                  <Text style={s.modalCancelTxt}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.modalConfirm, deleteLoading && { opacity: 0.6 }]}
+                  onPress={handleDeleteConfirm}
+                  disabled={deleteLoading}
+                >
+                  <Text style={s.modalConfirmTxt}>
+                    {deleteLoading ? "삭제 중..." : "삭제하기"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* 필터 */}
       <View style={s.filters}>
@@ -263,7 +360,12 @@ export default function CommunityScreen() {
                 </Text>
               </View>
               <View style={s.cardInfo}>
-                <Text style={s.cardName}>{member.name}</Text>
+                <Text style={s.cardName}>
+                  {member.name}
+                  {member.chatId ? (
+                    <Text style={s.cardChatId}> @{member.chatId}</Text>
+                  ) : null}
+                </Text>
                 <View style={s.cardMeta}>
                   <View style={s.roleBadge}>
                     <Text style={s.roleBadgeTxt}>{member.role}</Text>
@@ -291,6 +393,8 @@ export default function CommunityScreen() {
 
 const s = StyleSheet.create({
   page: { flex: 1, backgroundColor: C.white },
+
+  // 헤더
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -329,30 +433,7 @@ const s = StyleSheet.create({
   registerBtnTxt: { color: C.white, fontSize: 13, fontWeight: "700" },
   registerBtnHint: { fontSize: 13 },
 
-  // 서브 페이지 헤더 (마이페이지형 다크)
-  subPageHeader: {
-    height: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    backgroundColor: "#0f172a",
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-    borderBottomWidth: 1,
-    borderColor: "#1e293b",
-    shadowColor: "#7c6fff",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  subPageLeft: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
-  subPageTitle: { fontSize: 18, fontWeight: "800", color: "#f1f5f9" },
-  subPageRight: { flexDirection: "row", alignItems: "center", gap: 12 },
-  subPageIconBtn: { padding: 6 },
-
-  // 로그인 안내
+  // 로그인 배너
   loginBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -367,6 +448,124 @@ const s = StyleSheet.create({
     borderColor: "#c7d2fe",
   },
   loginBannerTxt: { fontSize: 13, color: C.accent, flex: 1 },
+
+  // ── 내 프로필 배너 ──
+  myProfileBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: C.accentBg,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#c7d2fe",
+    padding: 12,
+    gap: 8,
+  },
+  myProfileLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  myProfileAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: C.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  myProfileAvatarTxt: { color: C.white, fontSize: 14, fontWeight: "800" },
+  myProfileLabel: { fontSize: 11, color: C.accent, fontWeight: "700" },
+  myProfileName: { fontSize: 13, fontWeight: "700", color: C.text },
+  myProfileChatId: { color: C.accent, fontWeight: "600" },
+  myProfileActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+  },
+  regionBadgeSmall: {
+    backgroundColor: C.cardBg,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  regionBadgeSmallTxt: { fontSize: 11, color: C.sub },
+  editBtn: {
+    backgroundColor: C.accentBg,
+    borderWidth: 1.5,
+    borderColor: "#c7d2fe",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  editBtnTxt: { fontSize: 12, fontWeight: "700", color: C.accent },
+  deleteBtn: {
+    backgroundColor: C.redBg,
+    borderWidth: 1.5,
+    borderColor: C.redBorder,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  deleteBtnTxt: { fontSize: 12, fontWeight: "700", color: C.red },
+
+  // ── 삭제 확인 모달 ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalBox: {
+    backgroundColor: C.white,
+    borderRadius: 20,
+    padding: 28,
+    width: 320,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  modalIcon: { fontSize: 36, marginBottom: 12 },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: C.text,
+    marginBottom: 8,
+  },
+  modalDesc: {
+    fontSize: 13,
+    color: C.sub,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  modalBtns: { flexDirection: "row", gap: 10, width: "100%" },
+  modalCancel: {
+    flex: 1,
+    backgroundColor: C.cardBg,
+    borderRadius: 10,
+    padding: 12,
+    alignItems: "center",
+  },
+  modalCancelTxt: { fontSize: 14, fontWeight: "700", color: "#374151" },
+  modalConfirm: {
+    flex: 1,
+    backgroundColor: C.red,
+    borderRadius: 10,
+    padding: 12,
+    alignItems: "center",
+  },
+  modalConfirmTxt: { fontSize: 14, fontWeight: "700", color: C.white },
 
   // 필터
   filters: {
@@ -420,6 +619,7 @@ const s = StyleSheet.create({
   cardAvatarTxt: { color: C.white, fontSize: 20, fontWeight: "800" },
   cardInfo: { flex: 1, minWidth: 0 },
   cardName: { fontSize: 16, fontWeight: "700", color: C.text, marginBottom: 4 },
+  cardChatId: { fontSize: 14, color: C.accent, fontWeight: "600" },
   cardMeta: { flexDirection: "row", gap: 6, marginBottom: 5, flexWrap: "wrap" },
   cardIntro: { fontSize: 13, color: C.sub },
   cardArrow: {

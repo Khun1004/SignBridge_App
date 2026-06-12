@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  AppHeader.tsx — 검색바 포커스 시 /search 페이지로 이동
+//  AppHeader.tsx — 알림 버튼 → /noti 페이지로 이동
 // ══════════════════════════════════════════════════════════════
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -39,6 +39,7 @@ interface AppHeaderProps {
   onLogout?: () => void;
   onMyPage?: () => void;
   onLogoPress?: () => void;
+  onNoti?: () => void; // ★ 알림 페이지 이동 콜백
 }
 
 export default function AppHeader({
@@ -50,10 +51,10 @@ export default function AppHeader({
   onLogout,
   onMyPage,
   onLogoPress,
+  onNoti, // ★ 추가
 }: AppHeaderProps) {
   const router = useRouter();
   const [signedUpName, setSignedUpName] = useState("");
-  const [notifOpen, setNotifOpen] = useState(false);
   const [authModal, setAuthModal] = useState<"login" | "signup" | null>(null);
 
   const unreadCount = notifications.filter((n) => n.unread).length;
@@ -65,9 +66,17 @@ export default function AppHeader({
     onLogin?.(name, orgType, email);
   };
 
-  // 검색바 터치 → /search 페이지로 이동
   const handleSearchPress = () => {
     router.navigate("/search" as any);
+  };
+
+  // ★ 알림 버튼: onNoti prop 우선, 없으면 /noti 직접 이동
+  const handleNotiPress = () => {
+    if (onNoti) {
+      onNoti();
+    } else {
+      router.navigate("/noti" as any);
+    }
   };
 
   return (
@@ -145,7 +154,7 @@ export default function AppHeader({
 
         {/* ─── 2행 ─── */}
         <View style={s.row2}>
-          {/* 검색바 — 터치하면 /search 로 이동 (입력 불가 더미) */}
+          {/* 검색바 — 터치하면 /search 로 이동 */}
           <TouchableOpacity
             style={s.search}
             onPress={handleSearchPress}
@@ -160,26 +169,25 @@ export default function AppHeader({
             <Text style={s.searchPlaceholder}>수어 단어를 검색하세요...</Text>
           </TouchableOpacity>
 
-          <View>
-            <TouchableOpacity
-              style={[s.icoBtn, unreadCount > 0 && s.icoBtnOn]}
-              onPress={() => setNotifOpen(true)}
-              activeOpacity={0.75}
-            >
-              <Ionicons
-                name="notifications-outline"
-                size={18}
-                color={unreadCount > 0 ? C.accent : C.sub}
-              />
-              {unreadCount > 0 && (
-                <View style={s.badge}>
-                  <Text style={s.badgeTxt}>
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
+          {/* ★ 알림 버튼 — 터치하면 /noti 로 이동 */}
+          <TouchableOpacity
+            style={[s.icoBtn, unreadCount > 0 && s.icoBtnOn]}
+            onPress={handleNotiPress}
+            activeOpacity={0.75}
+          >
+            <Ionicons
+              name="notifications-outline"
+              size={18}
+              color={unreadCount > 0 ? C.accent : C.sub}
+            />
+            {unreadCount > 0 && (
+              <View style={s.badge}>
+                <Text style={s.badgeTxt}>
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -332,7 +340,6 @@ const s = StyleSheet.create({
   },
   badgeTxt: { color: "#fff", fontSize: 9, fontWeight: "700" },
 
-  // 검색바 — 터치 전용 (더미)
   search: {
     flexDirection: "row",
     alignItems: "center",

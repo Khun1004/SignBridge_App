@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 //  app/(tabs)/index.tsx  ←  HomeScreen (React Native)
-//  (변경점: 데모체험 ➡️ /demo, 더알아보기 ➡️ /about 이동 및 슬라이더 라우팅 연동)
 // ══════════════════════════════════════════════════════════════
+import { useScrollControl } from "@/components/contexts/ScrollContext";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -120,7 +120,6 @@ function ImageSlider({ onCommunity, onPractice, onTranslate }: SliderProps) {
   const slide = SLIDES[current];
   const progressPct = ((current + 1) / total) * 100;
 
-  // 슬라이드 링크 클릭 핸들러 (연습, 번역기, 커뮤니티 이동)
   const handleLinkPress = () => {
     if (slide.link === "커리큘럼 보기") {
       if (onPractice) onPractice();
@@ -201,6 +200,9 @@ export default function HomeScreen({
   const router = useRouter();
   const floatAnim = useRef(new Animated.Value(0)).current;
 
+  // ★ ScrollContext 연결
+  const { registerScroll, updateY } = useScrollControl();
+
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -219,7 +221,17 @@ export default function HomeScreen({
   }, []);
 
   return (
-    <ScrollView style={s.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={s.scroll}
+      showsVerticalScrollIndicator={false}
+      // ★ ref 연결: 플로팅 버튼이 이 ScrollView를 제어하게 됨
+      ref={(ref) => registerScroll(ref)}
+      // ★ 스크롤 위치 동기화: currentY가 실제 위치와 맞도록
+      onScroll={(e) => updateY(e.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
+      // ★ 탭바(약 80px)가 콘텐츠를 가리지 않도록 하단 패딩
+      contentContainerStyle={{ paddingBottom: 100 }}
+    >
       {/* ── 🌌 히어로 섹션 ── */}
       <ImageBackground
         source={{
@@ -230,9 +242,7 @@ export default function HomeScreen({
       >
         <View style={s.heroOverlay} />
 
-        {/* 상단 파트: 타이틀 콘텐츠 및 플로팅 실시간 카드 */}
         <View style={s.heroContent}>
-          {/* 글래스 모달 카드 */}
           <View style={s.glassCard}>
             <Text style={s.eyebrow}>AI 수어 번역 시스템</Text>
             <View style={s.divider} />
@@ -248,7 +258,6 @@ export default function HomeScreen({
             </Text>
 
             <View style={s.heroBtns}>
-              {/* ✨ [수정] 소통 데모 체험하기 버튼 ➡️ /demo 화면으로 라우팅 */}
               <TouchableOpacity
                 style={s.btnPrimary}
                 onPress={onDemo ?? (() => router.push("/demopage" as any))}
@@ -256,7 +265,6 @@ export default function HomeScreen({
                 <Text style={s.btnPrimaryText}>🎥 소통 데모 체험하기</Text>
               </TouchableOpacity>
 
-              {/* ✨ [수정] 더 알아보기 버튼 ➡️ /about 화면으로 라우팅 */}
               <TouchableOpacity
                 style={s.btnOutline}
                 onPress={onAbout ?? (() => router.push("/about" as any))}
@@ -266,7 +274,6 @@ export default function HomeScreen({
             </View>
           </View>
 
-          {/* 실시간 플로팅 카드 */}
           <Animated.View
             style={[s.liveCard, { transform: [{ translateY: floatAnim }] }]}
           >
@@ -284,7 +291,6 @@ export default function HomeScreen({
           </Animated.View>
         </View>
 
-        {/* 📊 가로 한 줄 투명 글래스 통계 대시보드 패널 */}
         <View style={s.statsHeroContainer}>
           <View style={s.statsHeroGlassLine}>
             {STATS.map((item, idx) => (
@@ -353,8 +359,6 @@ export default function HomeScreen({
         </TouchableOpacity>
         <Text style={s.ctaNote}>무료 오픈소스 프로젝트</Text>
       </View>
-
-      <View style={{ height: 30 }} />
     </ScrollView>
   );
 }
@@ -433,7 +437,7 @@ const sl = StyleSheet.create({
   progressFill: { height: 3, backgroundColor: ACCENT, borderRadius: 2 },
 });
 
-/* ── 메인 컴포넌트 스펙 스타일 ── */
+/* ── 메인 컴포넌트 스타일 ── */
 const s = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: "#fff" },
   heroBg: { minHeight: 570, justifyContent: "space-between" },

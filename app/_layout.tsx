@@ -74,9 +74,9 @@ function AppShell() {
   const isCommunitySubView =
     currentTab === "community" && communityView !== "list";
   const isConversation = segments.includes("conversationpage");
-
-  // ★ 검색 페이지 감지
   const isSearch = segments.includes("search");
+  const isNoti = segments.includes("noti");
+  const isChat = segments.includes("chat");
 
   const isBackHeader =
     isMyPage ||
@@ -85,7 +85,9 @@ function AppShell() {
     isCommDetail ||
     isCommunitySubView ||
     isConversation ||
-    isSearch; // ★ 추가
+    isSearch ||
+    isNoti ||
+    isChat;
 
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -97,11 +99,17 @@ function AppShell() {
     if (isRegistration) return "대화 기록 등록";
     if (isCommDetail) return "프로필 상세";
     if (isConversation) return "대화 요약 보고서";
-    if (isSearch) return "검색"; // ★ 추가
+    if (isSearch) return "검색";
+    if (isNoti) return "알림";
+    if (isChat) return "채팅";
     if (isCommunitySubView)
       return (
         communityTitle ||
-        (communityView === "register" ? "프로필 등록" : "프로필 상세")
+        (communityView === "register"
+          ? "프로필 등록"
+          : communityView === "edit" // ← edit 뷰 타이틀 추가
+            ? "프로필 수정"
+            : "프로필 상세")
       );
     return "";
   };
@@ -136,9 +144,13 @@ function AppShell() {
     });
   };
 
+  const goNoti = () => {
+    router.navigate("/noti" as any);
+  };
+
   const goChat = () => {
     setMenuOpen(false);
-    router.replace("/(tabs)/translate" as any);
+    router.navigate("/chat" as any);
   };
   const goCall = () => {
     setMenuOpen(false);
@@ -155,8 +167,7 @@ function AppShell() {
             <Text style={styles.myHeaderTitle}>{getBackHeaderTitle()}</Text>
           </TouchableOpacity>
           <View style={styles.myHeaderRight}>
-            {/* 검색 페이지에서는 검색 아이콘 숨김 */}
-            {!isSearch && (
+            {!isSearch && !isChat && (
               <TouchableOpacity
                 style={styles.myHeaderIconBtn}
                 onPress={() => router.navigate("/search" as any)}
@@ -164,16 +175,15 @@ function AppShell() {
                 <Ionicons name="search-outline" size={22} color="#94a3b8" />
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={styles.myHeaderIconBtn}
-              onPress={() => Alert.alert("알림", "알림 센터를 엽니다.")}
-            >
-              <Ionicons
-                name="notifications-outline"
-                size={22}
-                color="#94a3b8"
-              />
-            </TouchableOpacity>
+            {!isNoti && !isChat && (
+              <TouchableOpacity style={styles.myHeaderIconBtn} onPress={goNoti}>
+                <Ionicons
+                  name="notifications-outline"
+                  size={22}
+                  color="#94a3b8"
+                />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.myHeaderIconBtn}
               onPress={() => {
@@ -206,6 +216,7 @@ function AppShell() {
             router.replace("/(tabs)/" as any);
           }}
           onMyPage={goMyPage}
+          onNoti={goNoti}
         />
       ) : (
         <View style={styles.subHeader}>
@@ -217,10 +228,7 @@ function AppShell() {
             >
               <Ionicons name="search-outline" size={22} color="#ccc" />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.subHeaderIconBtn}
-              onPress={() => Alert.alert("알림", "새로운 알림이 없습니다.")}
-            >
+            <TouchableOpacity style={styles.subHeaderIconBtn} onPress={goNoti}>
               <Ionicons name="notifications-outline" size={22} color="#ccc" />
             </TouchableOpacity>
             <TouchableOpacity
@@ -253,7 +261,9 @@ function AppShell() {
           <Stack.Screen name="registration" />
           <Stack.Screen name="registrationpersonal" />
           <Stack.Screen name="registrationcommunity" />
-          <Stack.Screen name="search" /> {/* ★ 추가 */}
+          <Stack.Screen name="search" />
+          <Stack.Screen name="noti" />
+          <Stack.Screen name="chat" />
           <Stack.Screen name="modal" options={{ presentation: "modal" }} />
         </Stack>
       </View>

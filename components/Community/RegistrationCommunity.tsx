@@ -46,7 +46,10 @@ const REGION_OPTIONS = [
   "경기",
   "기타",
 ];
+
+// 웹과 동일한 4가지 연락 타입
 const CONTACT_TYPES = [
+  { id: "signbridge", label: "💬 SignBridge" },
   { id: "chat", label: "💬 오픈채팅" },
   { id: "phone", label: "📞 전화번호" },
   { id: "email", label: "📧 이메일" },
@@ -54,6 +57,7 @@ const CONTACT_TYPES = [
 
 export interface RegistrationForm {
   name: string;
+  chatId: string;
   role: string;
   region: string;
   intro: string;
@@ -67,6 +71,7 @@ export interface RegistrationForm {
 
 interface Props {
   defaultName?: string;
+  existingChatId?: string; // 수정 시 이미 잠긴 chatId
   initialData?: Partial<RegistrationForm> | null;
   isEdit?: boolean;
   onBack: () => void;
@@ -77,6 +82,7 @@ const STEPS = ["기본 정보", "자세한 소개", "연락처"];
 
 export default function RegistrationCommunityPage({
   defaultName = "",
+  existingChatId = "",
   initialData = null,
   isEdit = false,
   onBack,
@@ -88,12 +94,13 @@ export default function RegistrationCommunityPage({
 
   const [form, setForm] = useState<RegistrationForm>({
     name: initialData?.name || defaultName,
+    chatId: initialData?.chatId || existingChatId || "",
     role: initialData?.role || "",
     region: initialData?.region || "",
     intro: initialData?.intro || "",
     experience: initialData?.experience || "",
     speciality: initialData?.speciality || "",
-    contactType: initialData?.contactType || "chat",
+    contactType: initialData?.contactType || "signbridge",
     contactValue: initialData?.contactValue || "",
     publicProfile: initialData?.publicProfile ?? true,
     certFiles: initialData?.certFiles || [],
@@ -103,6 +110,9 @@ export default function RegistrationCommunityPage({
     k: K,
     v: RegistrationForm[K],
   ) => setForm((f) => ({ ...f, [k]: v }));
+
+  // chatId가 이미 있으면 잠금 처리 (수정 시)
+  const chatIdLocked = isEdit && !!existingChatId;
 
   // ── 유효성 검사 ──────────────────────────────────────────────
   const validate = (s: number) => {
@@ -114,7 +124,10 @@ export default function RegistrationCommunityPage({
       if (!form.intro.trim()) e.intro = "자기소개를 입력해 주세요.";
     }
     if (s === 3) {
-      if (!form.contactValue.trim()) e.contactValue = "연락처를 입력해 주세요.";
+      // signbridge 타입은 contactValue 불필요
+      if (form.contactType !== "signbridge" && !form.contactValue.trim()) {
+        e.contactValue = "연락처를 입력해 주세요.";
+      }
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -219,6 +232,42 @@ export default function RegistrationCommunityPage({
               onChangeText={(v) => set("name", v)}
             />
             {errors.name && <Text style={st.err}>{errors.name}</Text>}
+          </View>
+
+          {/* Chat ID — 잠김(수정) vs 입력(신규) */}
+          <View style={st.field}>
+            <Text style={st.label}>
+              Chat ID{" "}
+              <Text style={st.optTxt}>
+                (선택 · 고유 아이디, 한 번 설정 후 변경 불가)
+              </Text>
+            </Text>
+            {chatIdLocked ? (
+              // 잠금 표시 — 웹 reg-chatid-locked
+              <View style={st.chatIdLocked}>
+                <Text style={st.chatIdLockedAt}>@</Text>
+                <Text style={st.chatIdLockedValue}>{form.chatId}</Text>
+                <View style={st.chatIdLockedBadge}>
+                  <Text style={st.chatIdLockedBadgeTxt}>변경 불가</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={st.chatIdInputWrap}>
+                <Text style={st.chatIdAt}>@</Text>
+                <TextInput
+                  style={[st.chatIdInput, errors.chatId && st.inputErr]}
+                  placeholder="chat_id (영문·숫자·_)"
+                  placeholderTextColor="#bbb"
+                  value={form.chatId}
+                  onChangeText={(v) =>
+                    set("chatId", v.replace(/[^a-zA-Z0-9_]/g, ""))
+                  }
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            )}
+            {errors.chatId && <Text style={st.err}>{errors.chatId}</Text>}
           </View>
 
           {/* 역할 */}
@@ -364,47 +413,60 @@ export default function RegistrationCommunityPage({
             </View>
           </View>
 
-          {/* 연락처 값 */}
-          <View style={st.field}>
-            <Text style={st.label}>
-              {form.contactType === "chat"
-                ? "오픈채팅 링크"
-                : form.contactType === "phone"
-                  ? "전화번호"
-                  : "이메일"}{" "}
-              <Text style={{ color: C.red }}>*</Text>
-            </Text>
-            <TextInput
-              style={[st.input, errors.contactValue && st.inputErr]}
-              placeholder={
-                form.contactType === "chat"
-                  ? "https://open.kakao.com/..."
+          {/* SignBridge 선택 시 앱 내 채팅 안내 */}
+          {form.contactType === "signbridge" && (
+            <View style={st.signbridgeHint}>
+              <Text style={st.signbridgeHintTxt}>
+                💡 상대방이 앱 내 SignBridge 채팅으로 연락합니다. 별도 입력
+                불필요!
+              </Text>
+            </View>
+          )}
+
+          {/* SignBridge가 아닌 경우 연락처 입력 */}
+          {form.contactType !== "signbridge" && (
+            <View style={st.field}>
+              <Text style={st.label}>
+                {form.contactType === "chat"
+                  ? "오픈채팅 링크"
                   : form.contactType === "phone"
-                    ? "010-0000-0000"
-                    : "example@email.com"
-              }
-              placeholderTextColor="#bbb"
-              value={form.contactValue}
-              onChangeText={(v) => set("contactValue", v)}
-              keyboardType={
-                form.contactType === "phone"
-                  ? "phone-pad"
-                  : form.contactType === "email"
-                    ? "email-address"
-                    : "url"
-              }
-              autoCapitalize="none"
-            />
-            {errors.contactValue && (
-              <Text style={st.err}>{errors.contactValue}</Text>
-            )}
-          </View>
+                    ? "전화번호"
+                    : "이메일"}{" "}
+                <Text style={{ color: C.red }}>*</Text>
+              </Text>
+              <TextInput
+                style={[st.input, errors.contactValue && st.inputErr]}
+                placeholder={
+                  form.contactType === "chat"
+                    ? "https://open.kakao.com/..."
+                    : form.contactType === "phone"
+                      ? "010-0000-0000"
+                      : "example@email.com"
+                }
+                placeholderTextColor="#bbb"
+                value={form.contactValue}
+                onChangeText={(v) => set("contactValue", v)}
+                keyboardType={
+                  form.contactType === "phone"
+                    ? "phone-pad"
+                    : form.contactType === "email"
+                      ? "email-address"
+                      : "url"
+                }
+                autoCapitalize="none"
+              />
+              {errors.contactValue && (
+                <Text style={st.err}>{errors.contactValue}</Text>
+              )}
+            </View>
+          )}
 
           {/* 요약 */}
           <View style={st.summary}>
             <Text style={st.summaryTitle}>📋 등록 요약</Text>
             {[
               ["이름", form.name],
+              ["Chat ID", form.chatId ? `@${form.chatId}` : "-"],
               ["역할", form.role],
               ["지역", form.region],
               ["공개", form.publicProfile ? "공개" : "비공개"],
@@ -452,24 +514,6 @@ export default function RegistrationCommunityPage({
 
 const st = StyleSheet.create({
   page: { flex: 1, backgroundColor: C.white, padding: 20 },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 14,
-    marginBottom: 24,
-  },
-  backBtn: {
-    borderWidth: 1.5,
-    borderColor: C.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginTop: 4,
-    flexShrink: 0,
-  },
-  backBtnTxt: { fontSize: 13, fontWeight: "600", color: C.sub },
-  title: { fontSize: 24, fontWeight: "800", color: C.text, marginBottom: 4 },
-  subtitle: { fontSize: 13, color: C.sub },
 
   // 스텝
   steps: {
@@ -523,7 +567,7 @@ const st = StyleSheet.create({
     borderBottomWidth: 1.5,
     borderBottomColor: "#f3f4f6",
   },
-  optTxt: { fontSize: 12, fontWeight: "400", color: C.sub },
+  optTxt: { fontSize: 11, fontWeight: "400", color: C.sub },
 
   // 필드
   field: { gap: 6 },
@@ -552,6 +596,57 @@ const st = StyleSheet.create({
   inputErr: { borderColor: C.red },
   err: { fontSize: 11, color: C.red, fontWeight: "600" },
 
+  // chatId 잠금 표시 — 웹 reg-chatid-locked
+  chatIdLocked: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: C.bg,
+    borderWidth: 1.5,
+    borderColor: "#e0e7ff",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  chatIdLockedAt: { color: C.accent, fontWeight: "700", fontSize: 15 },
+  chatIdLockedValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.text,
+    flex: 1,
+  },
+  chatIdLockedBadge: {
+    backgroundColor: C.accentBg,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  chatIdLockedBadgeTxt: { fontSize: 11, fontWeight: "700", color: C.accent },
+
+  // chatId 입력 (신규)
+  chatIdInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 10,
+    backgroundColor: "#fafaf8",
+    paddingHorizontal: 14,
+    overflow: "hidden",
+  },
+  chatIdAt: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.accent,
+    marginRight: 4,
+  },
+  chatIdInput: {
+    flex: 1,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: "#111",
+  },
+
   // 토글 그룹
   toggleGroup: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   toggle: {
@@ -567,19 +662,29 @@ const st = StyleSheet.create({
   toggleTxtOn: { color: C.accent },
 
   // 연락처
-  contactTypes: { flexDirection: "row", gap: 8 },
+  contactTypes: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   contactTypeBtn: {
-    flex: 1,
     borderWidth: 1.5,
     borderColor: C.border,
     borderRadius: 10,
     paddingVertical: 9,
+    paddingHorizontal: 12,
     alignItems: "center",
     backgroundColor: C.white,
   },
   contactTypeBtnOn: { borderColor: C.accent, backgroundColor: C.accentBg },
   contactTypeTxt: { fontSize: 12, fontWeight: "600", color: C.sub },
   contactTypeTxtOn: { color: C.accent, fontWeight: "700" },
+
+  // SignBridge 선택 안내
+  signbridgeHint: {
+    backgroundColor: C.accentBg,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#c7d2fe",
+  },
+  signbridgeHintTxt: { fontSize: 13, color: C.accent, lineHeight: 20 },
 
   // 요약
   summary: { backgroundColor: C.bg, borderRadius: 12, padding: 16, gap: 8 },

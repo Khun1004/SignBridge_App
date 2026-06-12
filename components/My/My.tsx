@@ -1,10 +1,19 @@
 // ══════════════════════════════════════════════════════════════
-//  app/my.tsx — 마이페이지 (웹 MyPage.jsx 앱 이식)
+//  app/my.tsx — 마이페이지
 //  탭: 등록기록 | 커뮤니티 | 프로필
+//  기관 유형에 따라 등록기록 탭에 케이스 페이지 분기
 // ══════════════════════════════════════════════════════════════
-import { communityApi, myPageApi, personalApi } from "@/components/api/api";
+import {
+  communityApi,
+  immigrationApi,
+  myPageApi,
+  personalApi,
+  policeApi,
+} from "@/components/api/api";
 import Registration from "@/components/Community/RegistrationCommunity";
 import { useAuth } from "@/components/contexts/AuthContext";
+import ImmigrationCasePage from "@/components/ImmigrationCasePage/ImmigrationCasePage";
+import PoliceCasePage from "@/components/PoliceCasePage/PoliceCasePage";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -21,7 +30,6 @@ import {
   View,
 } from "react-native";
 
-// ─── 색상 ─────────────────────────────────────────────────────
 const C = {
   personal: "#2563eb",
   immig: "#7c3aed",
@@ -57,7 +65,6 @@ function normalizeOrgType(raw: string): string {
   return map[raw] || raw || "personal";
 }
 
-// ──────────────────────────────────────────────────────────────
 export default function MyPage() {
   const router = useRouter();
   const { loggedIn, userEmail, displayName, orgType } = useAuth();
@@ -68,6 +75,8 @@ export default function MyPage() {
   const [activeTab, setActiveTab] = useState("등록기록");
   const [profile, setProfile] = useState<any>(null);
   const [cases, setCases] = useState<any[]>([]);
+  const [immCases, setImmCases] = useState<any[]>([]);
+  const [policeCases, setPoliceCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [myCommProfile, setMyCommProfile] = useState<any>(null);
 
@@ -92,8 +101,19 @@ export default function MyPage() {
       try {
         const p = await myPageApi.getProfile(userEmail);
         setProfile(p);
-        const data = await personalApi.getCases(userEmail);
-        setCases(Array.isArray(data) ? data : []);
+
+        // 기관 유형에 따라 다른 케이스 API 호출
+        if (orgKey === "immigration") {
+          const data = await immigrationApi.getCases(userEmail).catch(() => []);
+          setImmCases(Array.isArray(data) ? data : []);
+        } else if (orgKey === "police") {
+          const data = await policeApi.getCases(userEmail).catch(() => []);
+          setPoliceCases(Array.isArray(data) ? data : []);
+        } else {
+          const data = await personalApi.getCases(userEmail);
+          setCases(Array.isArray(data) ? data : []);
+        }
+
         const cp = await communityApi.getMyProfile(userEmail).catch(() => null);
         if (cp) setMyCommProfile({ ...cp, avatar: cp.name?.charAt(0) || "?" });
       } catch {
@@ -101,7 +121,7 @@ export default function MyPage() {
         setLoading(false);
       }
     })();
-  }, [userEmail]);
+  }, [userEmail, orgKey]);
 
   // ── 프로필 저장 ────────────────────────────────────────────
   const handleSaveProfile = async () => {
@@ -132,7 +152,15 @@ export default function MyPage() {
     ? new Date(profile.joinedAt).toLocaleDateString("ko-KR")
     : "-";
 
-  // ── 커뮤니티 프로필 수정 화면 ──────────────────────────────
+  // 등록기록 카운트 (기관 유형별)
+  const recordCount =
+    orgKey === "immigration"
+      ? immCases.length
+      : orgKey === "police"
+        ? policeCases.length
+        : cases.length;
+
+  // ── 커뮤니티 프로필 수정 ───────────────────────────────────
   if (commEditMode) {
     return (
       <View style={{ flex: 1, backgroundColor: "#fff" }}>
@@ -148,12 +176,14 @@ export default function MyPage() {
         <Registration
           defaultName={displayName}
           initialData={myCommProfile}
+          existingChatId={myCommProfile?.chatId || ""}
           isEdit={true}
           onBack={() => setCommEditMode(false)}
           onSubmit={async (form) => {
             try {
               const body = {
                 name: displayName,
+                chatId: myCommProfile?.chatId || undefined,
                 userEmail,
                 role: form.role,
                 region: form.region,
@@ -161,9 +191,10 @@ export default function MyPage() {
                 experience: form.experience,
                 speciality: form.speciality,
                 contactType: form.contactType,
-                contactValue: form.contactValue,
+                contactValue:
+                  form.contactType === "signbridge" ? "" : form.contactValue,
                 publicProfile: form.publicProfile,
-                certFileNames: form.certFiles.map((f) => f.name),
+                certFileNames: form.certFiles.map((f: any) => f.name),
               };
               const saved = myCommProfile?.id
                 ? await communityApi.update(myCommProfile.id, body)
@@ -225,7 +256,7 @@ export default function MyPage() {
         {/* 통계 */}
         <View style={s.statsRow}>
           <View style={s.statBox}>
-            <Text style={[s.statVal, { color: C.accent }]}>{cases.length}</Text>
+            <Text style={[s.statVal, { color: C.accent }]}>{recordCount}</Text>
             <Text style={s.statLbl}>등록 기록</Text>
           </View>
           <View style={s.statDivider} />
@@ -260,70 +291,102 @@ export default function MyPage() {
         {/* ════ 등록기록 탭 ════ */}
         {!loading && activeTab === "등록기록" && (
           <View style={s.tabContent}>
-            {cases.length === 0 ? (
-              <View style={s.empty}>
-                <Text style={s.emptyIcon}>📋</Text>
-                <Text style={s.emptyTxt}>등록된 기록이 없습니다.</Text>
-                <Text style={s.emptyHint}>
-                  번역기에서 대화 종료 후 등록하면 여기에 저장됩니다.
-                </Text>
-              </View>
-            ) : (
-              cases.map((c, i) => (
-                <View key={c.id ?? i} style={s.recordCard}>
-                  <View style={s.recordTop}>
-                    <Text style={s.recordId}>
-                      CASE-{String(c.id ?? i + 1).padStart(3, "0")}
+            {/* 출입국 기관 */}
+            {orgKey === "immigration" && (
+              <ImmigrationCasePage
+                cases={immCases}
+                loading={loading}
+                displayName={displayName}
+                profile={profile}
+                onRegister={() =>
+                  router.push("/registrationimmigration" as any)
+                }
+              />
+            )}
+
+            {/* 경찰서 */}
+            {orgKey === "police" && (
+              <PoliceCasePage
+                cases={policeCases}
+                loading={loading}
+                displayName={displayName}
+                profile={profile}
+                onRegister={() => router.push("/registrationpolice" as any)}
+              />
+            )}
+
+            {/* 개인 / 기타 */}
+            {orgKey !== "immigration" && orgKey !== "police" && (
+              <>
+                {cases.length === 0 ? (
+                  <View style={s.empty}>
+                    <Text style={s.emptyIcon}>📋</Text>
+                    <Text style={s.emptyTxt}>등록된 기록이 없습니다.</Text>
+                    <Text style={s.emptyHint}>
+                      번역기에서 대화 종료 후 등록하면 여기에 저장됩니다.
                     </Text>
-                    <View style={s.statusBadge}>
-                      <Text style={s.statusTxt}>✅ 등록됨</Text>
-                    </View>
                   </View>
-                  <View style={s.recordMeta}>
-                    <Text style={s.recordMetaTxt}>👤 {c.name || "-"}</Text>
-                    <Text style={s.recordMetaTxt}>📅 {c.createdAt || "-"}</Text>
-                    <Text style={s.recordMetaTxt}>
-                      💬 {c.messageCount || 0}개 메시지
-                    </Text>
-                  </View>
-                  {c.memo && (
-                    <View style={s.memoChip}>
-                      <Text style={s.memoChipTxt}>{c.memo}</Text>
-                    </View>
-                  )}
-                  {/* 대화 버블 */}
-                  {c.messages?.length > 0 && (
-                    <View style={s.bubbleList}>
-                      {c.messages.map((msg: any, mi: number) => (
-                        <View
-                          key={mi}
-                          style={[
-                            s.bubble,
-                            msg.msgType === "voice"
-                              ? s.bubbleRight
-                              : s.bubbleLeft,
-                          ]}
-                        >
-                          <Text style={s.bubbleWho}>
-                            {msg.msgType === "sign"
-                              ? "🧏 청각장애인"
-                              : "🙋 담당자"}
-                          </Text>
-                          <Text
-                            style={[
-                              s.bubbleTxt,
-                              msg.msgType === "voice" && s.bubbleTxtVoice,
-                            ]}
-                          >
-                            {msg.content || "-"}
-                          </Text>
-                          <Text style={s.bubbleTime}>{msg.sentAt || ""}</Text>
+                ) : (
+                  cases.map((c, i) => (
+                    <View key={c.id ?? i} style={s.recordCard}>
+                      <View style={s.recordTop}>
+                        <Text style={s.recordId}>
+                          CASE-{String(c.id ?? i + 1).padStart(3, "0")}
+                        </Text>
+                        <View style={s.statusBadge}>
+                          <Text style={s.statusTxt}>✅ 등록됨</Text>
                         </View>
-                      ))}
+                      </View>
+                      <View style={s.recordMeta}>
+                        <Text style={s.recordMetaTxt}>👤 {c.name || "-"}</Text>
+                        <Text style={s.recordMetaTxt}>
+                          📅 {c.createdAt || "-"}
+                        </Text>
+                        <Text style={s.recordMetaTxt}>
+                          💬 {c.messageCount || 0}개 메시지
+                        </Text>
+                      </View>
+                      {c.memo && (
+                        <View style={s.memoChip}>
+                          <Text style={s.memoChipTxt}>{c.memo}</Text>
+                        </View>
+                      )}
+                      {c.messages?.length > 0 && (
+                        <View style={s.bubbleList}>
+                          {c.messages.map((msg: any, mi: number) => (
+                            <View
+                              key={mi}
+                              style={[
+                                s.bubble,
+                                msg.msgType === "voice"
+                                  ? s.bubbleRight
+                                  : s.bubbleLeft,
+                              ]}
+                            >
+                              <Text style={s.bubbleWho}>
+                                {msg.msgType === "sign"
+                                  ? "🧏 청각장애인"
+                                  : "🙋 담당자"}
+                              </Text>
+                              <Text
+                                style={[
+                                  s.bubbleTxt,
+                                  msg.msgType === "voice" && s.bubbleTxtVoice,
+                                ]}
+                              >
+                                {msg.content || "-"}
+                              </Text>
+                              <Text style={s.bubbleTime}>
+                                {msg.sentAt || ""}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </View>
-                  )}
-                </View>
-              ))
+                  ))
+                )}
+              </>
             )}
           </View>
         )}
@@ -346,7 +409,20 @@ export default function MyPage() {
                     <Text style={s.commAvatarTxt}>{myCommProfile.avatar}</Text>
                   </View>
                   <View>
-                    <Text style={s.commName}>{myCommProfile.name}</Text>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Text style={s.commName}>{myCommProfile.name}</Text>
+                      {!!myCommProfile.chatId && (
+                        <Text style={s.commChatId}>
+                          @{myCommProfile.chatId}
+                        </Text>
+                      )}
+                    </View>
                     <View style={s.commBadges}>
                       <View style={s.roleBadge}>
                         <Text style={s.roleBadgeTxt}>{myCommProfile.role}</Text>
@@ -395,16 +471,17 @@ export default function MyPage() {
                 <View style={s.commIntroBox}>
                   <Text style={s.commIntroLabel}>연락 방법</Text>
                   <Text style={s.commIntroTxt}>
-                    {myCommProfile.contactType === "chat"
-                      ? `💬 오픈채팅: ${myCommProfile.contactValue}`
-                      : myCommProfile.contactType === "phone"
-                        ? `📞 ${myCommProfile.contactValue}`
-                        : myCommProfile.contactType === "email"
-                          ? `📧 ${myCommProfile.contactValue}`
-                          : "-"}
+                    {myCommProfile.contactType === "signbridge"
+                      ? "💬 SignBridge 앱 내 채팅"
+                      : myCommProfile.contactType === "chat"
+                        ? `💬 오픈채팅: ${myCommProfile.contactValue}`
+                        : myCommProfile.contactType === "phone"
+                          ? `📞 ${myCommProfile.contactValue}`
+                          : myCommProfile.contactType === "email"
+                            ? `📧 ${myCommProfile.contactValue}`
+                            : "-"}
                   </Text>
                 </View>
-                {/* 수정 버튼 */}
                 <TouchableOpacity
                   style={s.commEditBtn}
                   onPress={() => setCommEditMode(true)}
@@ -530,8 +607,6 @@ export default function MyPage() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-
-  // 헤더
   header: {
     height: 56,
     flexDirection: "row",
@@ -544,10 +619,8 @@ const s = StyleSheet.create({
   },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 4 },
   headerTitle: { fontSize: 19, fontWeight: "800", color: "#1a1a2e" },
-
   page: { flex: 1 },
 
-  // 히어로
   hero: {
     flexDirection: "row",
     alignItems: "center",
@@ -602,7 +675,6 @@ const s = StyleSheet.create({
   },
   editProfileBtnTxt: { fontSize: 12, fontWeight: "700", color: C.textDim },
 
-  // 통계
   statsRow: {
     flexDirection: "row",
     backgroundColor: C.surface,
@@ -618,7 +690,6 @@ const s = StyleSheet.create({
   statVal: { fontSize: 24, fontWeight: "900", letterSpacing: -0.5 },
   statLbl: { fontSize: 11, color: C.textDim, fontWeight: "600", marginTop: 3 },
 
-  // 탭
   tabs: {
     flexDirection: "row",
     marginHorizontal: 16,
@@ -638,12 +709,10 @@ const s = StyleSheet.create({
   },
   tabTxt: { fontSize: 13, fontWeight: "700", color: C.textDim },
   tabTxtOn: { color: C.accent },
-
   tabContent: { paddingHorizontal: 16, gap: 10 },
   loadingBox: { alignItems: "center", gap: 10, padding: 40 },
   loadingTxt: { fontSize: 14, color: C.textDim },
 
-  // 빈 상태
   empty: {
     alignItems: "center",
     gap: 8,
@@ -662,7 +731,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
   },
 
-  // 등록기록 카드
   recordCard: {
     backgroundColor: C.surface,
     borderWidth: 1.5,
@@ -676,12 +744,7 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  recordId: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: C.text,
-    fontVariant: ["tabular-nums"],
-  },
+  recordId: { fontSize: 13, fontWeight: "700", color: C.text },
   statusBadge: {
     backgroundColor: "#e8fff4",
     borderRadius: 20,
@@ -699,8 +762,6 @@ const s = StyleSheet.create({
     alignSelf: "flex-start",
   },
   memoChipTxt: { fontSize: 12, fontWeight: "600", color: C.accent },
-
-  // 대화 버블
   bubbleList: { gap: 8, marginTop: 4 },
   bubble: { maxWidth: "85%", padding: 10, borderRadius: 12 },
   bubbleLeft: {
@@ -723,7 +784,6 @@ const s = StyleSheet.create({
   bubbleTxtVoice: { color: "#4c1d95" },
   bubbleTime: { fontSize: 9, color: C.textMuted, marginTop: 3 },
 
-  // 커뮤니티
   commCard: {
     backgroundColor: C.surface,
     borderWidth: 1.5,
@@ -743,6 +803,7 @@ const s = StyleSheet.create({
   },
   commAvatarTxt: { color: "#fff", fontSize: 20, fontWeight: "800" },
   commName: { fontSize: 17, fontWeight: "700", color: C.text },
+  commChatId: { fontSize: 13, fontWeight: "700", color: "#6366f1" },
   commBadges: { flexDirection: "row", gap: 6, marginTop: 4 },
   roleBadge: {
     backgroundColor: "#eef2ff",
@@ -785,7 +846,6 @@ const s = StyleSheet.create({
   },
   commEditBtnTxt: { color: "#6366f1", fontSize: 14, fontWeight: "700" },
 
-  // 프로필
   profileSection: {
     backgroundColor: C.surface,
     borderWidth: 1.5,
@@ -824,7 +884,6 @@ const s = StyleSheet.create({
   },
   editProfileBtn2Txt: { fontSize: 14, fontWeight: "700", color: C.textDim },
 
-  // 수정 모달
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(10,10,20,0.6)",

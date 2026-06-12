@@ -4,7 +4,8 @@
 // ══════════════════════════════════════════════════════════════
 import React, { createContext, useContext, useState } from "react";
 
-type CommunityView = "list" | "register" | "detail";
+// "edit" 뷰 타입 추가 — 웹 Community.jsx와 동일하게 맞춤
+type CommunityView = "list" | "register" | "edit" | "detail";
 
 interface CommunityContextType {
   communityView: CommunityView;
